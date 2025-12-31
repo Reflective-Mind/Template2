@@ -102,7 +102,7 @@ const HUDOverlay = ({ activeIndex, time }) => (
                 </div>
                 <div className="flex gap-1">
                     {[...Array(20)].map((_, i) => (
-                        <div key={i} className={\`w-[2px] h-1 ${i < (activeIndex + 1) * 5 ? 'bg-[#C5A059]' : 'bg-white/5'}\`}></div>
+                        <div key={i} className={\`w-[2px] h-1 \${i < (activeIndex + 1) * 5 ? 'bg-[#C5A059]' : 'bg-white/5'}\`}></div>
                     ))}
                 </div>
             </div>
@@ -128,7 +128,7 @@ const GoldEntity = ({ type, active }) => {
         </svg>,
         <svg viewBox="0 0 200 200" fill="none">
             {[...Array(6)].map((_, i) => (
-                <path key={i} d="M100 100L150 50L100 0L50 50L100 100Z" fill="url(#goldGrad)" opacity={0.3 + (i * 0.1)} transform={\`rotate(${i * 60} 100 100)\`} />
+                <path key={i} d="M100 100L150 50L100 0L50 50L100 100Z" fill="url(#goldGrad)" opacity={0.3 + (i * 0.1)} transform={\`rotate(\${i * 60} 100 100)\`} />
             ))}
             <rect x="80" y="80" width="40" height="40" stroke="url(#goldGrad)" strokeWidth="1" transform="rotate(45 100 100)" />
         </svg>,
@@ -139,7 +139,7 @@ const GoldEntity = ({ type, active }) => {
         </svg>
     ];
     return (
-        <div className={\`${baseClasses} ${activeClasses} relative group\`}>
+        <div className={\`\${baseClasses} \${activeClasses} relative group\`}>
             <div className="absolute inset-0 bg-[#C5A059]/10 blur-[100px] rounded-full scale-50 opacity-50 group-hover:scale-100 transition-transform duration-[5s]"></div>
             {entities[type % entities.length]}
         </div>
@@ -204,12 +204,12 @@ const App = () => {
                     <section key={asset.id} className="relative h-screen w-full snap-start flex items-center justify-center overflow-hidden">
                         <div className="absolute inset-0 z-0">
                             <div className="absolute inset-0 bg-gradient-to-b from-black via-transparent to-black z-10" />
-                            <img src={asset.image} className={\`w-full h-full object-cover transition-all duration-[12s] ease-out ${activeIndex === index ? 'scale-105 opacity-20' : 'scale-100 opacity-0 blur-2xl'}\`} alt="" />
-                            <div className={\`absolute top-0 left-0 w-full h-[30vh] bg-gradient-to-b from-[#C5A059]/5 to-transparent z-20 pointer-events-none ${activeIndex === index ? 'animate-[scanline_10s_infinite_linear]' : ''}\`}></div>
+                            <img src={asset.image} className={\`w-full h-full object-cover transition-all duration-[12s] ease-out \${activeIndex === index ? 'scale-105 opacity-20' : 'scale-100 opacity-0 blur-2xl'}\`} alt="" />
+                            <div className={\`absolute top-0 left-0 w-full h-[30vh] bg-gradient-to-b from-[#C5A059]/5 to-transparent z-20 pointer-events-none \${activeIndex === index ? 'animate-[scanline_10s_infinite_linear]' : ''}\`}></div>
                         </div>
                         <div className="relative z-20 flex flex-col items-center">
                             <GoldEntity type={index} active={activeIndex === index} />
-                            <div className={\`mt-20 text-center transition-all duration-[2s] delay-700 ${activeIndex === index ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}\`}>
+                            <div className={\`mt-20 text-center transition-all duration-[2s] delay-700 \${activeIndex === index ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}\`}>
                                 <div className="flex flex-col items-center gap-4">
                                     <span className="text-[7px] tracking-[1.2em] uppercase text-[#C5A059]/60">Vault Encryption Alpha</span>
                                     <h2 className="text-4xl font-serif italic font-light tracking-[0.2em] text-white/90">Asset_Lookbook_{index + 1}</h2>
