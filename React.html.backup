@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Luxury React Engine</title>
+    <!-- Frameworks & Tools -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Plus+Jakarta+Sans:wght@300;400;600&display=swap');
+        
+        :root {
+            --gold: #d4af37;
+            --gold-light: #f1e5ac;
+            --black: #050505;
+            --gray: #121212;
+        }
+
+        body {
+            background-color: var(--black);
+            color: var(--gold-light);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        .luxury-serif { font-family: 'Playfair Display', serif; }
+        
+        .gold-border { border: 1px solid rgba(212, 175, 55, 0.3); }
+        .gold-text { color: var(--gold); }
+        
+        .gold-gradient-bg {
+            background: linear-gradient(135deg, #d4af37 0%, #f1e5ac 50%, #c5a028 100%);
+        }
+
+        /* Glassmorphism for the editor */
+        .glass-panel {
+            background: rgba(18, 18, 18, 0.8);
+            backdrop-blur: 10px;
+            border: 1px solid rgba(212, 175, 55, 0.1);
+        }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+
+        /* Smooth Transitions */
+        .transition-luxury {
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        textarea {
+            scrollbar-width: thin;
+            scrollbar-color: var(--gold) transparent;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- THE ENGINE COMPONENT ---
+        const LuxuryEngine = () => {
+            const [code, setCode] = useState("");
+            const [error, setError] = useState(null);
+            const previewRef = useRef(null);
+            const rootRef = useRef(null);
+
+            // Default code for the user to see upon opening
+            useEffect(() => {
+                const initialCode = `export default function App() {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[500px] text-center p-12">
+      <div className="w-20 h-20 border-2 border-amber-500/20 rounded-full flex items-center justify-center mb-8">
+        <span className="text-4xl text-amber-500">✦</span>
+      </div>
+      
+      <h1 className="text-5xl font-serif text-white mb-4 italic">Auto-Render Active</h1>
+      <p className="text-amber-500/50 uppercase tracking-[0.4em] text-[10px] font-bold">
+        Paste any Gemini code here and it will just work
+      </p>
+      
+      <div className="mt-12 grid grid-cols-2 gap-4 w-full max-w-md">
+        <div className="p-6 bg-white/5 border border-white/10 rounded-2xl">
+            <p className="text-white font-bold text-xl">$1.2M</p>
+            <p className="text-[9px] text-neutral-500 uppercase tracking-widest mt-1">Assets</p>
+        </div>
+        <div className="p-6 bg-white/5 border border-white/10 rounded-2xl">
+            <p className="text-white font-bold text-xl">+12.4%</p>
+            <p className="text-[9px] text-neutral-500 uppercase tracking-widest mt-1">Growth</p>
+        </div>
+      </div>
+    </div>
+  );
+}`;
+                setCode(initialCode);
+            }, []);
+
+            const executeCode = () => {
+                if (!previewRef.current) return;
+                
+                try {
+                    // We strip imports because they aren't needed in this browser context
+                    const cleanCode = code.replace(/import\s+.*\s+from\s+['"].*['"];?/g, '');
+
+                    // Transpile JSX/ES6 to JS
+                    const transpiled = Babel.transform(cleanCode, {
+                        presets: ['react'],
+                    }).code;
+
+                    // Clear existing root if it exists
+                    if (rootRef.current) {
+                        rootRef.current.unmount();
+                    }
+
+                    // Create new root in the preview container
+                    rootRef.current = ReactDOM.createRoot(previewRef.current);
+                    
+                    const render = (component) => {
+                        rootRef.current.render(component);
+                    };
+
+                    // Execution Scope
+                    const exports = {};
+                    const scope = { 
+                      React, 
+                      useState, 
+                      useEffect, 
+                      useRef,
+                      render, 
+                      exports,
+                      // Spread Lucide icons into scope so user can use <Camera /> etc.
+                      ...lucide 
+                    };
+
+                    // Generate the function body string without incorrect escapes
+                    const functionBody = `
+                        ${transpiled}
+                        
+                        // Smart Render Logic
+                        if (typeof exports.default !== 'undefined') {
+                          render(React.createElement(exports.default));
+                        } else if (typeof App !== 'undefined') {
+                          render(React.createElement(App));
+                        }
+                    `;
+
+                    const F = new Function(...Object.keys(scope), functionBody);
+                    F(...Object.values(scope));
+                    
+                    setError(null);
+                } catch (err) {
+                    setError(err.message);
+                }
+            };
+
+            return (
+                <div className="flex h-screen w-screen bg-[#050505] p-6 gap-6">
+                    
+                    {/* LEFT SIDE: THE EDITOR */}
+                    <div className="flex-1 flex flex-col glass-panel rounded-[2.5rem] p-8 overflow-hidden shadow-2xl">
+                        <div className="flex justify-between items-center mb-6">
+                            <div>
+                                <h2 className="luxury-serif text-2xl text-white italic">Code Editor</h2>
+                                <p className="text-[9px] text-amber-500 uppercase tracking-[0.3em] font-bold">React Runtime v18.0</p>
+                            </div>
+                            <button 
+                                onClick={executeCode}
+                                className="gold-gradient-bg px-10 py-3 rounded-full text-black font-black uppercase tracking-widest text-[10px] hover:scale-105 transition-luxury shadow-lg active:scale-95"
+                            >
+                                Execute Viewport
+                            </button>
+                        </div>
+                        
+                        <textarea 
+                            value={code}
+                            onChange={(e) => setCode(e.target.value)}
+                            spellCheck="false"
+                            className="flex-1 bg-[#0a0a0a] border border-amber-500/10 rounded-3xl p-8 font-mono text-sm text-amber-100/70 focus:outline-none focus:border-amber-500/40 transition-luxury resize-none shadow-inner leading-relaxed"
+                        />
+
+                        {error && (
+                            <div className="mt-4 p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl">
+                                <p className="text-[10px] font-mono text-rose-500 uppercase tracking-widest mb-1 font-bold">Compile Error</p>
+                                <p className="text-xs text-rose-400 font-mono break-words">{error}</p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* RIGHT SIDE: THE VIEWPORT */}
+                    <div className="flex-1 flex flex-col items-center justify-center">
+                        <div className="w-full max-w-[450px] aspect-[9/19] bg-black rounded-[3rem] border border-amber-500/20 shadow-[0_0_80px_rgba(212,175,55,0.05)] overflow-hidden relative flex flex-col">
+                            {/* Device Notch Mock */}
+                            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-neutral-900 rounded-b-2xl z-20"></div>
+                            
+                            {/* Render Container */}
+                            <div 
+                                ref={previewRef} 
+                                className="flex-1 overflow-y-auto no-scrollbar pt-8 bg-black"
+                            >
+                                <div className="h-full w-full flex items-center justify-center text-neutral-700 italic text-sm">
+                                    Awaiting execution...
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="mt-6 text-center">
+                            <p className="luxury-serif text-amber-500/40 italic">Live Resolution: 450 x 950 px</p>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<LuxuryEngine />);
+    </script>
+</body>
+</html>
