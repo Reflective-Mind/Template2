@@ -8,6 +8,19 @@ import { twMerge } from 'tailwind-merge';
 import * as firebaseApp from 'firebase/app';
 import * as firebaseAuth from 'firebase/auth';
 import * as firebaseFirestore from 'firebase/firestore';
+import * as PrismJS from 'prismjs';
+import 'prismjs/components/prism-clike';
+import 'prismjs/components/prism-javascript';
+import 'prismjs/components/prism-typescript';
+import 'prismjs/components/prism-jsx';
+import 'prismjs/components/prism-css';
+import 'prismjs/components/prism-python';
+import 'prismjs/components/prism-json';
+import 'prismjs/components/prism-sql';
+import 'prismjs/components/prism-markdown';
+import * as ReactSimpleCodeEditor from 'react-simple-code-editor';
+import * as ReactMarkdownModule from 'react-markdown';
+import thinkTreeSource from './ThinkTreeCode.jsx?raw';
 
 // --- ENVIRONMENT CONSTANTS ---
 const ENV = {
@@ -21,13 +34,35 @@ function ArchitectWorkshop({ initialFiles, mode = "edit" }) {
     const [activeFile, setActiveFile] = useState("App.js");
     const [error, setError] = useState(null);
     const [isEditorOpen, setIsEditorOpen] = useState(false);
-    const [showWorkshopUI, setShowWorkshopUI] = useState(true);
+    const [showWorkshopUI, setShowWorkshopUI] = useState(false);
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.key === "F8") setShowWorkshopUI((prev) => !prev);
+        };
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, []);
     const [copyFeedback, setCopyFeedback] = useState(null);
     const [babelReady, setBabelReady] = useState(false);
+    const [livePreview, setLivePreview] = useState(true);
+    const [needsRun, setNeedsRun] = useState(false);
+    const lastExecutedSigRef = useRef("");
     const previewRef = useRef(null);
     const rootInstance = useRef(null);
     const isMounted = useRef(false);
+    const transpileCacheRef = useRef(/* @__PURE__ */ new Map());
     const h = React.createElement;
+    useEffect(() => {
+        if (initialFiles && initialFiles["ThinkTree.js"]) {
+            setFiles((prev) => {
+                if (prev["ThinkTree.js"] !== initialFiles["ThinkTree.js"]) {
+                    console.log("[HMR] Updating ThinkTree.js from source");
+                    return { ...prev, "ThinkTree.js": initialFiles["ThinkTree.js"] };
+                }
+                return prev;
+            });
+        }
+    }, [initialFiles]);
     useEffect(() => {
         isMounted.current = true;
         if (typeof window !== "undefined" && !window.Babel) {
@@ -52,11 +87,20 @@ function ArchitectWorkshop({ initialFiles, mode = "edit" }) {
         };
     }, []);
     useEffect(() => {
-        if (babelReady && files && isMounted.current) {
-            const timer = setTimeout(() => executeCode(), 100);
-            return () => clearTimeout(timer);
+        if (babelReady && isMounted.current) {
+            const sig = JSON.stringify(files);
+            if (livePreview) {
+                const timer = setTimeout(() => {
+                    executeCode();
+                    lastExecutedSigRef.current = sig;
+                    setNeedsRun(false);
+                }, 100);
+                return () => clearTimeout(timer);
+            } else if (sig !== lastExecutedSigRef.current) {
+                setNeedsRun(true);
+            }
         }
-    }, [babelReady, files]);
+    }, [babelReady, files, livePreview]);
     const executeCode = () => {
         if (!previewRef.current || !window.Babel || !isMounted.current) return;
         setError(null);
@@ -82,6 +126,9 @@ function ArchitectWorkshop({ initialFiles, mode = "edit" }) {
                     if (path === "firebase/app") return firebaseApp;
                     if (path === "firebase/auth") return firebaseAuth;
                     if (path === "firebase/firestore") return firebaseFirestore;
+                    if (path === "prismjs") return PrismJS;
+                    if (path === "react-simple-code-editor") return ReactSimpleCodeEditor;
+                    if (path === "react-markdown") return ReactMarkdownModule;
                     if (path.startsWith("./")) {
                         const sanitized = path.replace("./", "");
                         return window.__modules__ && window.__modules__[sanitized] ? window.__modules__[sanitized] : {};
@@ -90,23 +137,66 @@ function ArchitectWorkshop({ initialFiles, mode = "edit" }) {
                 }
             };
             window.__modules__ = {};
+            window.Prism = PrismJS.default || PrismJS;
             let bundle = "";
             Object.keys(files).forEach((f) => {
                 const code = files[f];
                 const cleanName = f.replace(".js", "");
-                try {
-                    const transpiled = window.Babel.transform(code, { presets: ["react", "env"], filename: f }).code;
-                    bundle += `(function(){ var exports={}; var module={exports:exports}; ${transpiled}; window.__modules__['${f}'] = module.exports; window['${cleanName}'] = module.exports.default || module.exports; })();`;
-                } catch (e) {
-                    React.createElement("div", {}, e.message);
+                const cacheKey = `${f}::${code.length}::${code.substring(0, 50)}`;
+                let transpiled;
+                if (transpileCacheRef.current.has(cacheKey)) {
+                    transpiled = transpileCacheRef.current.get(cacheKey);
+                } else {
+                    try {
+                        transpiled = window.Babel.transform(code, { presets: ["react", "env"], filename: f }).code;
+                        transpileCacheRef.current.set(cacheKey, transpiled);
+                    } catch (e) {
+                        console.error("Compilation Error (" + f + "):", e);
+                        throw new Error("Compilation Error in " + f + ": " + e.message);
+                    }
                 }
+                bundle += `(function(){ var exports={}; var module={exports:exports}; ${transpiled}; window.__modules__['${f}'] = module.exports; window['${cleanName}'] = module.exports.default || module.exports; })();`;
             });
-            const finalScope = { ...scope, files, setFiles, saveAsDefault, render: (c) => rootInstance.current.render(h(React.Fragment, { key: Date.now() }, c)) };
-            new Function(...Object.keys(finalScope), `try { ${bundle} const T = (typeof App !== 'undefined' ? App : null); if(T) render(React.createElement(T, {env:{files, updateFiles: setFiles, saveProject: saveAsDefault}})); } catch(e){ throw e; }`)(...Object.values(finalScope));
+            const finalScope = {
+                ...scope,
+                Prism: PrismJS,
+                Editor: ReactSimpleCodeEditor.Editor || ReactSimpleCodeEditor.default || ReactSimpleCodeEditor,
+                ReactMarkdown: ReactMarkdownModule.default || ReactMarkdownModule,
+                files,
+                setFiles,
+                saveAsDefault,
+                render: (c) => rootInstance.current.render(h(React.Fragment, { key: Date.now() }, c))
+            };
+            const safeEnv = Object.freeze({
+                files: Object.freeze({ ...files }),
+                updateFiles: setFiles,
+                // Setter is safe (closure)
+                saveProject: saveAsDefault
+            });
+            new Function(...Object.keys(finalScope), `try { ${bundle} const T = (typeof App !== 'undefined' ? App : null); if(T) render(React.createElement(T, {env: ${JSON.stringify(safeEnv)} /* frozen */ })); } catch(e){ throw e; }`)(...Object.values(finalScope));
+            if (window.App) {
+                rootInstance.current.render(h(React.Fragment, { key: Date.now() }, h(window.App, { env: safeEnv })));
+            }
         } catch (e) {
+            console.error("Engine Runtime Error:", e);
             setError(e.message);
         }
     };
+    const runNow = () => {
+        executeCode();
+        lastExecutedSigRef.current = JSON.stringify(files);
+        setNeedsRun(false);
+    };
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (!livePreview && (e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                e.preventDefault();
+                runNow();
+            }
+        };
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [livePreview, files]);
     const saveAsDefault = () => {
         const nl = "\n";
         const filesJson = JSON.stringify(files, null, 2);
@@ -114,7 +204,32 @@ function ArchitectWorkshop({ initialFiles, mode = "edit" }) {
         engineSourceCode = engineSourceCode.replace(/^[ \t]*_s\(\);[\r\n]*/gm, "");
         engineSourceCode = engineSourceCode.replace(/^[ \t]*_c\s*=[^;]+;[\r\n]*/gm, "");
         engineSourceCode = engineSourceCode.replace(/^[ \t]*\$RefreshReg\$[^;]+;[\r\n]*/gm, "");
-        const newFileContent = "/* eslint-disable */" + nl + "import React, { useState, useEffect, useRef, useMemo, useCallback, useContext, createContext, useReducer, useLayoutEffect } from 'react';" + nl + "import * as lucide from 'lucide-react';" + nl + "import * as framerMotion from 'framer-motion';" + nl + "import ReactDOM from 'react-dom/client';" + nl + "import { clsx } from 'clsx';" + nl + "import { twMerge } from 'tailwind-merge';" + nl + "import * as firebaseApp from 'firebase/app';" + nl + "import * as firebaseAuth from 'firebase/auth';" + nl + "import * as firebaseFirestore from 'firebase/firestore';" + nl + nl + "// --- ENVIRONMENT CONSTANTS ---" + nl + "const ENV = {" + nl + "    isLocal: typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')," + nl + "    isProd: typeof window !== 'undefined' && window.location.hostname !== 'localhost'" + nl + "};" + nl + nl + "// --- GODLIKE ENGINE (v3.0) ---" + nl + engineSourceCode + nl + nl + "// --- ROOT ENTRY ---" + nl + "export default function RootApp() {" + nl + "  const initialFiles = " + filesJson + ";" + nl + "  return React.createElement(ArchitectWorkshop, { initialFiles, mode: ENV.isLocal ? 'edit' : 'view' });" + nl + "}";
+        const imports = [
+            "import React, { useState, useEffect, useRef, useMemo, useCallback, useContext, createContext, useReducer, useLayoutEffect } from 'react';",
+            "import * as lucide from 'lucide-react';",
+            "import * as framerMotion from 'framer-motion';",
+            "import ReactDOM from 'react-dom/client';",
+            "import { clsx } from 'clsx';",
+            "import { twMerge } from 'tailwind-merge';",
+            "import * as firebaseApp from 'firebase/app';",
+            "import * as firebaseAuth from 'firebase/auth';",
+            "import * as firebaseFirestore from 'firebase/firestore';",
+            // Critical Prism & Editor Imports
+            "import * as PrismJS from 'prismjs';",
+            "import 'prismjs/components/prism-clike';",
+            "import 'prismjs/components/prism-javascript';",
+            "import 'prismjs/components/prism-typescript';",
+            "import 'prismjs/components/prism-jsx';",
+            "import 'prismjs/components/prism-css';",
+            "import 'prismjs/components/prism-python';",
+            "import 'prismjs/components/prism-json';",
+            "import 'prismjs/components/prism-sql';",
+            "import 'prismjs/components/prism-markdown';",
+            "import * as ReactSimpleCodeEditor from 'react-simple-code-editor';",
+            "import * as ReactMarkdownModule from 'react-markdown';",
+            "import thinkTreeSource from './ThinkTreeCode.jsx?raw';"
+        ].join(nl);
+        const newFileContent = "/* eslint-disable */" + nl + imports + nl + nl + "// --- ENVIRONMENT CONSTANTS ---" + nl + "const ENV = {" + nl + "    isLocal: typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')," + nl + "    isProd: typeof window !== 'undefined' && window.location.hostname !== 'localhost'" + nl + "};" + nl + nl + "// --- GODLIKE ENGINE (v3.0) ---" + nl + engineSourceCode + nl + nl + "// --- ROOT ENTRY ---" + nl + "export default function RootApp() {" + nl + "  const initialFiles = " + filesJson + ";" + nl + "  return React.createElement(ArchitectWorkshop, { initialFiles, mode: ENV.isLocal ? 'edit' : 'view' });" + nl + "}";
         navigator.clipboard.writeText(newFileContent).then(() => {
             setCopyFeedback("save");
             setTimeout(() => setCopyFeedback(null), 2e3);
@@ -126,18 +241,21 @@ function ArchitectWorkshop({ initialFiles, mode = "edit" }) {
             setTimeout(() => setCopyFeedback(null), 2e3);
         });
     };
-    const { Code2, Save, Copy, Check, X, Plus, Trash2 } = lucide;
+    const { Code2, Save, Copy, Check, X, Plus, Trash2, Play } = lucide;
     const { AnimatePresence, motion } = framerMotion;
     return h(
         "div",
         { className: "relative h-screen w-screen bg-[#020202] font-sans overflow-hidden text-white" },
         h("div", { ref: previewRef, className: "h-full w-full overflow-y-auto" }),
+        error && h("div", { className: "fixed bottom-4 left-4 right-4 bg-red-900/90 text-white p-4 rounded-lg border border-red-500 z-[9999] font-mono text-xs whitespace-pre-wrap shadow-2xl" }, "RUNTIME ERROR: " + error),
         mode === "edit" && h(
             React.Fragment,
             null,
             h(AnimatePresence, null, showWorkshopUI && h(
                 motion.div,
                 { initial: { opacity: 0, x: 20 }, animate: { opacity: 1, x: 0 }, exit: { opacity: 0, x: 20 }, className: "fixed top-6 right-6 flex items-center gap-2 z-[500]" },
+                h("button", { onClick: () => setLivePreview(!livePreview), className: `px-3 py-1.5 rounded-full text-xs font-bold transition-all ${!livePreview ? "bg-amber-500/20 text-amber-500 ring-1 ring-amber-500/50" : "bg-black/60 text-white"}` }, livePreview ? "Live" : "Paused"),
+                !livePreview && h("button", { onClick: runNow, className: `p-3 rounded-full transition-all ${needsRun ? "bg-amber-500 text-black animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.5)]" : "bg-black/60 text-gray-400 hover:text-white"}` }, h(Play, { size: 16, fill: "currentColor" })),
                 h("button", { onClick: () => setIsEditorOpen(true), className: "p-3 bg-black/60 rounded-full" }, h(Code2, { size: 16 })),
                 h("button", { onClick: copyActiveCode, className: "p-3 bg-black/60 rounded-full" }, copyFeedback === "code" ? h(Check, { size: 16 }) : h(Copy, { size: 16 })),
                 h("button", { onClick: saveAsDefault, className: "p-3 bg-black/60 rounded-full" }, copyFeedback === "save" ? h(Check, { size: 16 }) : h(Save, { size: 16 }))
@@ -165,376 +283,261 @@ function ArchitectWorkshop({ initialFiles, mode = "edit" }) {
                     )
                 )
             ))
-        )
+        ),
+        !livePreview && needsRun && h("div", { className: "fixed top-20 right-8 px-4 py-2 bg-black/80 text-amber-500 text-xs font-mono border border-amber-500/30 rounded-lg pointer-events-none z-[490]" }, "Preview paused — press Run")
     );
 }
 
-// --- ROOT ENTRY ---
-export default function RootApp() {
-    const initialFiles = {
-        "App.js": `import c from './c.js';
-import b from './b.js';
-import a from './a.js';
+const appJsSource = `import ThinkTree from './ThinkTree.js';
 import React, { useState, useEffect } from 'react';
 import * as lucide from 'lucide-react';
 
 // --- PAGE REGISTRY ---
-const INITIAL_PAGES = [
-    { id: 'c', name: 'c', component: 'c' },
-{ id: 'b', name: 'b', component: 'b' },
-{ id: 'a', name: 'a', component: 'a' },
-];
+const INITIAL_PAGES_JSON = \`[
+    {
+        "id": "home",
+        "name": "Home",
+        "component": "Home",
+        "layer": null,
+        "order": 0
+    },
+    {
+        "id": "thinktree",
+        "name": "ThinkTree",
+        "component": "ThinkTree",
+        "layer": "Personal",
+        "order": 0
+    }
+]\`;
+const INITIAL_LAYER_ORDER_JSON = \`["Personal"]\`;
+
+const INITIAL_PAGES = JSON.parse(INITIAL_PAGES_JSON);
+const INITIAL_LAYER_ORDER = JSON.parse(INITIAL_LAYER_ORDER_JSON);
 
 export default function App({ env }) {
-    const [activePage, setActivePage] = useState('dashboard');
+    const [activePage, setActivePage] = useState('home');
     const [pages, setPages] = useState(INITIAL_PAGES);
+    const [layerOrder, setLayerOrder] = useState(INITIAL_LAYER_ORDER);
+    const [showDevTools, setShowDevTools] = useState(false);
 
     useEffect(() => {
+        const handleKeyDown = (e) => { if (e.key === 'F8') setShowDevTools(prev => !prev); };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
+    // Sync from Registry
+    useEffect(() => {
         if (env && env.files && env.files['App.js']) {
-            const match = env.files['App.js'].match(/const INITIAL_PAGES = (\\[[\\s\\S]*?\\]);/);
-            if (match && match[1]) try { setPages(eval(match[1])); } catch (e) {}
+            const matchP = env.files['App.js'].match(/const INITIAL_PAGES_JSON = \`([\\s\\S]*?)\`;/);
+            if (matchP && matchP[1]) { try { setPages(JSON.parse(matchP[1])); } catch (e) {} }
+            const matchL = env.files['App.js'].match(/const INITIAL_LAYER_ORDER_JSON = \`([\\s\\S]*?)\`;/);
+            if (matchL && matchL[1]) { try { setLayerOrder(JSON.parse(matchL[1])); } catch (e) {} }
         }
     }, [env]);
 
-    // Added Logic: Handle Hash Changes for Legacy buttons
+    // Hash Logic
     useEffect(() => {
-        const handleHash = () => { if(window.location.hash === '' || window.location.hash === '#') setActivePage('dashboard'); };
+        const handleHash = () => { if(window.location.hash === '' || window.location.hash === '#') setActivePage('home'); };
         window.addEventListener('hashchange', handleHash);
         return () => window.removeEventListener('hashchange', handleHash);
     }, []);
 
     const navigate = (id) => setActivePage(id);
 
+    // --- MANIPULATION ---
+    const updateRegistry = (newPages, newLayerOrder) => {
+        if (!env) return;
+        let app = env.files['App.js'];
+        if (newPages) app = app.replace(/const INITIAL_PAGES_JSON = \`([\\s\\S]*?)\`;/, \`const INITIAL_PAGES_JSON = \\\`\${JSON.stringify(newPages, null, 4)}\\\`;\`);
+        if (newLayerOrder) app = app.replace(/const INITIAL_LAYER_ORDER_JSON = \`([\\s\\S]*?)\`;/, \`const INITIAL_LAYER_ORDER_JSON = \\\`\${JSON.stringify(newLayerOrder, null, 4)}\\\`;\`);
+        env.updateFiles({ ...env.files, 'App.js': app });
+    };
+
     const handleAddPage = () => {
         if (!env) return alert("Env not connected");
         const name = prompt("Page Name?");
         if (!name) return;
+        const layer = prompt("Layer? (e.g. Personal, Work, Tools)") || "Personal";
         const clean = name.replace(/[^a-zA-Z0-9]/g, '');
         const filename = clean + ".js";
         if (env.files[filename]) return;
 
-        const code = \`import React from 'react';
-export default function \${clean}() {
-  return <div className="p-20 text-white"><h1>\${name}</h1></div>;
-}\`;
+        const code = \`import React from 'react';\\nexport default function \${clean}() {\\n  return <div className="h-full w-full p-10 text-white bg-[#0A0A0A] flex items-center justify-center">\\n      <div className="text-center">\\n          <h1 className="text-4xl font-bold mb-4">\${name}</h1>\\n          <p className="text-zinc-500">Edit this file to build your page.</p>\\n      </div>\\n  </div>;\\n}\`;
         
-        // Update App.js imports
         let app = env.files['App.js'];
         if (!app.includes(\`import \${clean}\`)) app = \`import \${clean} from './\${filename}';\\n\` + app;
-        // Update Registry
-        app = app.replace(/const INITIAL_PAGES = \\[\\s*/, \`const INITIAL_PAGES = [\\n    { id: '\${clean.toLowerCase()}', name: '\${name}', component: '\${clean}' },\\n\`);
         
+        const layerPages = pages.filter(p => p.layer === layer);
+        const maxOrder = layerPages.length > 0 ? Math.max(...layerPages.map(p => p.order || 0)) : -1;
+        const newPageObj = { id: clean.toLowerCase(), name: name, component: clean, layer: layer, order: maxOrder + 1 };
+        const newPages = [...pages, newPageObj];
+        
+        let newLayerOrder = null;
+        if (!layerOrder.includes(layer)) newLayerOrder = [...layerOrder, layer];
+        
+        if (newPages) app = app.replace(/const INITIAL_PAGES_JSON = \`([\\s\\S]*?)\`;/, \`const INITIAL_PAGES_JSON = \\\`\${JSON.stringify(newPages, null, 4)}\\\`;\`);
+        if (newLayerOrder) app = app.replace(/const INITIAL_LAYER_ORDER_JSON = \`([\\s\\S]*?)\`;/, \`const INITIAL_LAYER_ORDER_JSON = \\\`\${JSON.stringify(newLayerOrder, null, 4)}\\\`;\`);
+
         env.updateFiles({ ...env.files, [filename]: code, 'App.js': app });
     };
 
     const handleDelete = (id, comp) => {
         if (!confirm("Delete?")) return;
+        if (id === 'home') return alert("Cannot delete home page.");
         const filename = comp + ".js";
         let app = env.files['App.js'];
-        app = app.replace(new RegExp(\`\\\\{\\\\s*id:\\\\s*'\${id}'[\\\\s\\\\S]*?\\\\},?\`, 'g'), '');
-        app = app.replace(new RegExp(\`import\\\\s+\${comp}\\\\s+from\\\\s+['\"]\\\\.\\\\/\${filename}['\"];?\\\\n?\`, 'g'), '');
+        app = app.replace(new RegExp(\`import\\\\s+\${comp}\\\\s+from\\\\s+['"]\\\\.\\\\/\${filename}['"];?\\\\n?\`, 'g'), '');
+        const newPages = pages.filter(p => p.id !== id);
+        app = app.replace(/const INITIAL_PAGES_JSON = \`([\\s\\S]*?)\`;/, \`const INITIAL_PAGES_JSON = \\\`\${JSON.stringify(newPages, null, 4)}\\\`;\`);
         const newFiles = { ...env.files, 'App.js': app };
         delete newFiles[filename];
         env.updateFiles(newFiles);
     };
 
-    // --- RENDER ---
-    const getComp = (name) => { try { return eval(name); } catch(e) { return null; } };
+    const moveLayer = (name, dir) => {
+        const idx = layerOrder.indexOf(name);
+        if (idx === -1) return;
+        const newIdx = idx + dir;
+        if (newIdx < 0 || newIdx >= layerOrder.length) return;
+        const newOrder = [...layerOrder];
+        [newOrder[idx], newOrder[newIdx]] = [newOrder[newIdx], newOrder[idx]];
+        updateRegistry(null, newOrder);
+    };
 
-    if (activePage !== 'dashboard') {
-        const p = pages.find(pg => pg.id === activePage);
-        const C = p ? getComp(p.component) : null;
-        return C ? <><BackButton onClick={() => navigate('dashboard')} /><C /></> : <div className="text-white">404</div>;
-    }
+    const movePage = (id, dir) => {
+        const page = pages.find(p => p.id === id);
+        if (!page) return;
+        const siblings = pages.filter(p => p.layer === page.layer).sort((a,b) => (a.order||0) - (b.order||0));
+        const selfIndex = siblings.findIndex(p => p.id === id);
+        const targetIndex = selfIndex + dir;
+        if (targetIndex < 0 || targetIndex >= siblings.length) return;
+        
+        const reOrdered = siblings.map((p, i) => ({ ...p, order: i }));
+        const sSelf = reOrdered[selfIndex];
+        const sTarget = reOrdered[targetIndex];
+        sSelf.order = targetIndex;
+        sTarget.order = selfIndex;
+        
+        const finalPages = pages.map(p => {
+             const found = reOrdered.find(s => s.id === p.id);
+             return found || p;
+        });
+        updateRegistry(finalPages, null);
+    };
+
+    const getComp = (name) => {
+        try {
+            return window[name] 
+                || (window.__modules__ && window.__modules__['App.js'] && window.__modules__['App.js'][name])
+                || (window.__modules__ && window.__modules__[name + '.js'] ? (window.__modules__[name + '.js'].default || window.__modules__[name + '.js']) : null);
+        } catch(e) { return null; }
+    };
+
+    const layers = pages.reduce((acc, p) => {
+        if (!p.layer) return acc;
+        const l = p.layer;
+        if (!acc[l]) acc[l] = [];
+        acc[l].push(p);
+        return acc;
+    }, {});
+
+    const sortedLayerNames = Object.keys(layers).sort((a, b) => {
+        const idxA = layerOrder.indexOf(a);
+        const idxB = layerOrder.indexOf(b);
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+        if (idxA !== -1) return -1;
+        if (idxB !== -1) return 1;
+        return a.localeCompare(b);
+    });
+
+    const ActiveComponent = (() => {
+        const p = pages.find(pg => pg.id === activePage) || pages.find(pg => pg.id === 'home');
+        return p ? getComp(p.component) : null;
+    })();
 
     return (
-        <div className="min-h-screen bg-[#020202] text-white p-8 font-sans">
-             <nav className="flex justify-between items-center mb-20 border-b border-white/10 pb-6">
-                 <div><h1 className="text-xl italic font-serif">Aurelian Engine</h1><p className="text-[10px] uppercase tracking-widest text-neutral-500">System V3.0</p></div>
-                 <div className="flex gap-4">
-                    <button onClick={handleAddPage} className="px-4 py-2 bg-white/5 text-white/40 text-xs border border-white/10 rounded-full hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"><lucide.Plus size={12}/> New Page</button>
-                    <button onClick={() => env.saveProject()} className="px-4 py-2 bg-amber-500/10 text-amber-500 text-xs border border-amber-500/20 rounded-full hover:bg-amber-500 hover:text-black transition-colors">Save Protocol</button>
-                 </div>
-             </nav>
-             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3 max-w-7xl mx-auto">
-                 {pages.map(p => (
-                     <div key={p.id} onClick={() => navigate(p.id)} className="cursor-pointer bg-[#0A0A0A] border border-white/5 rounded-xl p-4 flex flex-col items-center gap-3 hover:border-amber-500/50 hover:bg-[#0A0A0A] transition-all group relative">
-                         <div className="w-12 h-12 bg-white/5 rounded-lg flex items-center justify-center text-amber-500/80 group-hover:text-amber-500 group-hover:bg-amber-500/10 transition-all shadow-inner">
-                             <lucide.Box size={24} strokeWidth={1.5} />
-                         </div>
-                         <h3 className="text-xs font-medium tracking-wide text-white/70 group-hover:text-white text-center truncate w-full">{p.name}</h3>
-                         
-                         <button onClick={(e) => {e.stopPropagation(); handleDelete(p.id, p.component)}} className="absolute top-2 right-2 text-white/5 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><lucide.X size={12} /></button>
+        <div className="h-screen w-screen bg-[#020202] text-white font-sans flex flex-col overflow-hidden">
+             <nav className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-[#050505] sticky top-0 z-50 shrink-0 select-none">
+                 <div className="flex items-center gap-6">
+                     <div onClick={() => navigate('home')} className="flex items-center gap-3 cursor-pointer group">
+                        <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-500 group-hover:bg-amber-500/20 group-hover:scale-105 transition-all outline outline-1 outline-transparent group-hover:outline-amber-500/30"><lucide.Cpu size={18} /></div>
+                        <div><h1 className="text-sm font-bold text-gray-200 tracking-tight leading-none group-hover:text-white transition-colors">Aurelian</h1></div>
                      </div>
-                 ))}
-             </div>
+                     <div className="h-4 w-px bg-white/10 mx-2"></div>
+                     <div className="flex items-center gap-4">
+                     {sortedLayerNames.map(layerName => {
+                            const layerPages = layers[layerName].sort((a,b) => (a.order||0) - (b.order||0));
+                            return (
+                             <div key={layerName} className="relative group flex items-center gap-1">
+                                 {showDevTools && (
+                                     <div className="flex flex-col -space-y-1">
+                                         <div onClick={(e) => {e.stopPropagation(); moveLayer(layerName, -1)}} className="cursor-pointer hover:text-white text-zinc-600"><lucide.ChevronLeft size={10} /></div>
+                                         <div onClick={(e) => {e.stopPropagation(); moveLayer(layerName, 1)}} className="cursor-pointer hover:text-white text-zinc-600"><lucide.ChevronRight size={10} /></div>
+                                     </div>
+                                 )}
+                                 <div className="relative group/btn">
+                                     <button className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-semibold text-zinc-400 hover:text-white hover:bg-white/5 transition-all">
+                                         {layerName}
+                                         <lucide.ChevronDown size={10} className="text-zinc-600 group-hover/btn:text-zinc-400" />
+                                     </button>
+                                     <div className="absolute top-full left-0 mt-1 min-w-[160px] bg-[#0A0A0A] border border-white/10 rounded-lg shadow-xl opacity-0 invisible group-hover/btn:opacity-100 group-hover/btn:visible transition-all duration-200 z-[100] transform origin-top-left flex flex-col py-1">
+                                         {layerPages.map(p => (
+                                             <button key={p.id} onClick={() => navigate(p.id)} className={\`text-left w-full px-4 py-2 text-xs font-medium transition-colors flex items-center justify-between \${activePage === p.id ? 'text-blue-400 bg-blue-500/10' : 'text-zinc-400 hover:text-white hover:bg-white/5'}\`}>
+                                                 <span>{p.name}</span>
+                                                 {showDevTools && (
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="flex flex-col -space-y-1">
+                                                             <div onClick={(e) => {e.stopPropagation(); movePage(p.id, -1)}} className="hover:text-blue-400 cursor-pointer"><lucide.ChevronUp size={8}/></div>
+                                                             <div onClick={(e) => {e.stopPropagation(); movePage(p.id, 1)}} className="hover:text-blue-400 cursor-pointer"><lucide.ChevronDown size={8}/></div>
+                                                        </div>
+                                                        {p.id !== 'home' && (
+                                                            <div onClick={(e) => {e.stopPropagation(); handleDelete(p.id, p.component)}} className="text-zinc-700 hover:text-red-500 p-1 rounded hover:bg-white/5">
+                                                                <lucide.Trash2 size={10} />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                 )}
+                                             </button>
+                                         ))}
+                                     </div>
+                                 </div>
+                             </div>
+                         )
+                     })}
+                     </div>
+                 </div>
+                 {showDevTools && <div className="flex gap-2 ml-4 shrink-0">
+                    <button onClick={handleAddPage} className="p-1.5 bg-white/5 text-zinc-500 rounded hover:bg-zinc-800 hover:text-white transition-all" title="New Page"><lucide.Plus size={14}/></button>
+                    <button onClick={() => env.saveProject()} className="p-1.5 bg-amber-500/10 text-amber-600 rounded hover:bg-amber-500/20 transition-all" title="Save Protocol"><lucide.Save size={14}/></button>
+                 </div>}
+             </nav>
+             <main className="flex-1 relative overflow-hidden bg-[#0A0A0A]">
+                {ActiveComponent ? <ActiveComponent /> : <div className="flex h-full items-center justify-center text-zinc-600 font-mono text-sm">404: Component Not Found</div>}
+             </main>
         </div>
     );
 }
-
-export const BackButton = ({ onClick }) => (
-    <button onClick={onClick} className="fixed top-8 left-8 z-[100] p-3 bg-black/50 backdrop-blur border border-white/10 rounded-full hover:bg-white hover:text-black transition-all">
-        <lucide.ArrowLeft size={20} />
-    </button>
-);`,
-        "a.js": `import React, { useState, useEffect, useMemo } from 'react';
-
-/**
- * AURELIAN - V7: THE DIGITAL VAULT
- * Focus: Futuristic luxury, HUD elements, technical textures, and spatial depth.
- * Style: Avant-garde UI, liquid gold sculptures, and "Digital Concierge" aesthetics.
- */
-
-// --- HUD Component: Adds futuristic texture to the edges ---
-const HUDOverlay = ({ activeIndex }) => (
-  <div className="fixed inset-0 pointer-events-none z-50 font-mono text-[8px] tracking-[0.2em] text-[#C5A059]/30 uppercase">
-    {/* Top Left: System Status */}
-    <div className="absolute top-12 left-12 flex flex-col gap-1">
-      <div className="flex items-center gap-2">
-        <div className="w-1 h-1 bg-green-500 animate-pulse"></div>
-        <span>System: Secure_Uplink</span>
-      </div>
-      <div className="opacity-50">LAT: 46.2044° N // LON: 6.1432° E</div>
-    </div>
-
-    {/* Top Right: Connection Meta */}
-    <div className="absolute top-12 right-12 text-right opacity-50">
-      <div>Vault_ID: AUR-00{activeIndex + 1}</div>
-      <div>Encryption: RSA-4096</div>
-    </div>
-
-    {/* Bottom Left: Asset Scanning Meta */}
-    <div className="absolute bottom-12 left-12 space-y-2">
-      <div className="flex items-center gap-4">
-        <div className="h-[1px] w-12 bg-[#C5A059]/20"></div>
-        <span className="text-[#C5A059]">Asset_Classification</span>
-      </div>
-      <div className="pl-16 opacity-40">
-        <div>// Integrity_Verified</div>
-        <div>// Origin_Confirmed</div>
-      </div>
-    </div>
-
-    {/* Bottom Right: Time Stream */}
-    <div className="absolute bottom-12 right-12 flex items-end gap-6">
-      <div className="text-right opacity-40">
-        <div>GMT +1 [GENÈVE]</div>
-        <div className="tabular-nums">{new Date().toLocaleTimeString()}</div>
-      </div>
-      <div className="w-8 h-8 border border-[#C5A059]/20 flex items-center justify-center">
-        <div className="w-1 h-1 bg-[#C5A059] animate-ping"></div>
-      </div>
-    </div>
-  </div>
-);
-
-const GoldEntity = ({ type, active }) => {
-  const baseClasses = \`w-64 h-64 md:w-[28rem] md:h-[28rem] transition-all duration-[3s] cubic-bezier(0.16, 1, 0.3, 1)\`;
-  const activeClasses = active ? 'opacity-100 scale-100 blur-0 rotate-0' : 'opacity-0 scale-90 blur-3xl rotate-12';
-
-  const entities = [
-    // Entity 1: The Monolith / Crest
-    <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#8E6E36" />
-          <stop offset="20%" stopColor="#C5A059" />
-          <stop offset="50%" stopColor="#F9F1D1" />
-          <stop offset="80%" stopColor="#C5A059" />
-          <stop offset="100%" stopColor="#8E6E36" />
-        </linearGradient>
-      </defs>
-      <circle cx="100" cy="100" r="80" stroke="url(#goldGrad)" strokeWidth="0.25" />
-      <path d="M100 20L130 70H70L100 20Z" fill="url(#goldGrad)" opacity="0.9" />
-      <path d="M100 180L70 130H130L100 180Z" fill="url(#goldGrad)" opacity="0.9" />
-      <rect x="60" y="60" width="80" height="80" stroke="url(#goldGrad)" strokeWidth="0.5" transform="rotate(45 100 100)" />
-      <circle cx="100" cy="100" r="40" stroke="url(#goldGrad)" strokeWidth="0.2" />
-    </svg>,
-    // Entity 2: The Orbital
-    <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="100" cy="100" r="90" stroke="url(#goldGrad)" strokeWidth="0.1" />
-      <circle cx="100" cy="100" r="70" stroke="url(#goldGrad)" strokeWidth="0.5" strokeDasharray="2 4" />
-      <path d="M100 30C138.66 30 170 61.3401 170 100C170 138.66 138.66 170 100 170" stroke="url(#goldGrad)" strokeWidth="2" strokeLinecap="round" />
-      <circle cx="100" cy="100" r="15" fill="url(#goldGrad)" />
-      <ellipse cx="100" cy="100" rx="95" ry="35" stroke="url(#goldGrad)" strokeWidth="0.5" transform="rotate(-30 100 100)" />
-    </svg>,
-    // Entity 3: The Geometric Symmetery
-    <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-      {[...Array(12)].map((_, i) => (
-        <rect 
-          key={i} 
-          x="60" y="60" width="80" height="80" 
-          stroke="url(#goldGrad)" 
-          strokeWidth="0.4" 
-          transform={\`rotate(\${i * 30} 100 100)\`} 
-          opacity={0.2 + (i * 0.05)}
-        />
-      ))}
-      <circle cx="100" cy="100" r="8" fill="url(#goldGrad)" />
-    </svg>,
-    // Entity 4: The Minimalist A (Sculptural)
-    <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M100 30L170 170H145L100 75L55 170H30L100 30Z" fill="url(#goldGrad)" />
-      <path d="M70 120H130" stroke="url(#goldGrad)" strokeWidth="0.5" strokeDasharray="2 2" />
-    </svg>
-  ];
-
-  return (
-    <div className={\`\${baseClasses} \${activeClasses} relative group cursor-none\`}>
-      <div className="absolute inset-0 bg-[#C5A059]/5 blur-3xl rounded-full scale-50 group-hover:scale-100 transition-transform duration-[4s]"></div>
-      {entities[type % entities.length]}
-    </div>
-  );
-};
-
-const ASSETS = [
-  { id: 1, image: "https://images.unsplash.com/photo-1518005020251-58296d8f8d71?auto=format&fit=crop&q=80&w=2400" },
-  { id: 2, image: "https://images.unsplash.com/photo-1550684848-86a5d8727436?auto=format&fit=crop&q=80&w=2400" },
-  { id: 3, image: "https://images.unsplash.com/photo-1515549832467-8c441fe74996?auto=format&fit=crop&q=80&w=2400" },
-  { id: 4, image: "https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&q=80&w=2400" }
-];
-
-const App = () => {
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [time, setTime] = useState(new Date());
-
-  useEffect(() => {
-    const timer = setInterval(() => setTime(new Date()), 1000);
-    const handleScroll = () => {
-      const scrollPosition = window.scrollY;
-      const windowHeight = window.innerHeight;
-      const index = Math.round(scrollPosition / windowHeight);
-      if (index !== activeIndex) setActiveIndex(index);
-    };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => {
-      window.removeEventListener('scroll', handleScroll);
-      clearInterval(timer);
-    };
-  }, [activeIndex]);
-
-  return (
-    <div className="bg-[#010101] text-white selection:bg-[#C5A059] selection:text-black antialiased overflow-hidden">
-      
-      {/* Dynamic Grid System */}
-      <div className="fixed inset-0 pointer-events-none opacity-20">
-        <div className="absolute inset-0" style={{
-          backgroundImage: \`linear-gradient(to right, #C5A059 1px, transparent 1px), linear-gradient(to bottom, #C5A059 1px, transparent 1px)\`,
-          backgroundSize: '80px 80px',
-          maskImage: 'radial-gradient(circle at center, black, transparent 80%)'
-        }}></div>
-      </div>
-
-      {/* Futuristic HUD Components */}
-      <HUDOverlay activeIndex={activeIndex} />
-
-      {/* Main Branding Mark */}
-      <nav className="fixed top-0 w-full z-[60] px-16 py-12 flex items-center justify-between pointer-events-none">
-        <div className="flex flex-col gap-1 pointer-events-auto">
-          <h1 className="text-[10px] tracking-[1.5em] font-serif font-light text-[#C5A059] uppercase">
-            AURELIAN
-          </h1>
-          <div className="h-[1px] w-full bg-gradient-to-r from-[#C5A059] to-transparent"></div>
+export function Home() {
+    return (
+        <div className="h-full w-full flex flex-col items-center justify-center bg-[#020202] text-white p-10 select-none">
+            <div className="flex flex-col items-center justify-center">
+                 <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mb-6 shadow-2xl shadow-blue-500/10">
+                    <lucide.Cpu size={32} className="text-zinc-400" />
+                 </div>
+                 <h1 className="text-3xl font-bold tracking-tight text-white mb-2">Aurelian</h1>
+            </div>
         </div>
-        
-        <div className="pointer-events-auto flex items-center gap-8 text-[9px] tracking-widest text-white/40 uppercase">
-          <span className="hover:text-[#C5A059] cursor-pointer transition-colors">V_0.71</span>
-          <div className="w-10 h-10 border border-white/5 flex items-center justify-center hover:border-[#C5A059]/40 transition-all cursor-pointer">
-            <div className="w-1.5 h-1.5 border-[0.5px] border-[#C5A059]"></div>
-          </div>
-        </div>
-      </nav>
+    );
+}
+`;
 
-      {/* Cinematic Scroll Container */}
-      <main className="snap-y snap-mandatory h-screen overflow-y-auto hide-scrollbar relative z-10">
-        {ASSETS.map((asset, index) => (
-          <section 
-            key={asset.id} 
-            className="relative h-screen w-full snap-start flex items-center justify-center overflow-hidden"
-          >
-            {/* Background Atmosphere with Scan-lines */}
-            <div className="absolute inset-0 z-0">
-              <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-transparent to-black/90 z-10" />
-              <img 
-                src={asset.image} 
-                className={\`w-full h-full object-cover grayscale transition-all duration-[12s] ease-out \${activeIndex === index ? 'scale-110 opacity-20' : 'scale-100 opacity-0'}\`}
-                alt=""
-              />
-              {/* Animated Scan Line */}
-              <div className={\`absolute left-0 w-full h-[1px] bg-[#C5A059]/10 z-20 top-0 \${activeIndex === index ? 'animate-[scanning_8s_infinite]' : 'hidden'}\`}></div>
-            </div>
-
-            {/* Centered Golden Sculpture */}
-            <div className="relative z-20 flex flex-col items-center">
-              <GoldEntity type={index} active={activeIndex === index} />
-              
-              {/* Asset Title: Integrated HUD Style */}
-              <div className={\`mt-16 text-center transition-all duration-1000 delay-500 \${activeIndex === index ? 'opacity-100' : 'opacity-0 translate-y-8'}\`}>
-                 <p className="text-[8px] tracking-[0.8em] uppercase text-[#C5A059]/40 mb-2">Vault Entry</p>
-                 <h2 className="text-3xl font-serif italic font-light tracking-widest text-white/80">Asset_0{index + 1}</h2>
-              </div>
-            </div>
-
-            {/* Vertical Progress Component */}
-            <div className="absolute left-16 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-4 items-center">
-              {ASSETS.map((_, i) => (
-                <div key={i} className="flex flex-col items-center gap-4">
-                  <div 
-                    className={\`w-[1px] transition-all duration-1000 \${i === activeIndex ? 'bg-[#C5A059] h-24' : 'bg-white/5 h-6'}\`}
-                  />
-                  {i === activeIndex && (
-                    <span className="text-[8px] font-mono text-[#C5A059] rotate-90 translate-y-4">P_{i+1}</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          </section>
-        ))}
-      </main>
-
-      {/* Screen Edge Aesthetics */}
-      <div className="fixed inset-0 pointer-events-none z-[100] border-[1px] border-white/5 m-8"></div>
-      <div className="fixed inset-0 pointer-events-none z-[100] shadow-[inset_0_0_200px_rgba(0,0,0,0.95)]"></div>
-
-      <style dangerouslySetInnerHTML={{ __html: \`
-        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,300;1,300&family=Inter:wght@100;200&family=JetBrains+Mono:wght@100&display=swap');
-        
-        body { 
-          font-family: 'Inter', sans-serif; 
-          background-color: #010101;
-          overflow: hidden;
-        }
-        
-        .font-serif { font-family: 'Playfair Display', serif; }
-        .font-mono { font-family: 'JetBrains Mono', monospace; }
-        
-        .hide-scrollbar::-webkit-scrollbar { display: none; }
-        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-        main {
-          scroll-snap-type: y mandatory;
-          overflow-y: scroll;
-          height: 100vh;
-        }
-
-        @keyframes scanning {
-          0% { top: 0; opacity: 0; }
-          10% { opacity: 1; }
-          90% { opacity: 1; }
-          100% { top: 100%; opacity: 0; }
-        }
-
-        svg {
-          filter: drop-shadow(0 0 50px rgba(197, 160, 89, 0.1));
-        }
-      \`}} />
-    </div>
-  );
-};
-
-export default App;`,
-        "b.js": "import React from 'react';\nexport default function b() {\n  return <div className=\"p-20 text-white\"><h1>b</h1></div>;\n}",
-        "c.js": "import React from 'react';\nexport default function c() {\n  return <div className=\"p-20 text-white\"><h1>c</h1></div>;\n}"
+// --- ROOT ENTRY ---
+export default function RootApp() {
+    const initialFiles = {
+        "App.js": appJsSource,
+        "ThinkTree.js": thinkTreeSource,
+        "ThinkTreeCode.jsx": thinkTreeSource
     };
     return React.createElement(ArchitectWorkshop, { initialFiles, mode: ENV.isLocal ? 'edit' : 'view' });
 }
