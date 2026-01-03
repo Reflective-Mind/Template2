@@ -149,6 +149,14 @@ function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, [mode]);
     const [copyFeedback, setCopyFeedback] = useState(null);
+    const [showGithubDialog, setShowGithubDialog] = useState(false);
+    const [pushing, setPushing] = useState(false);
+    const [githubConfig, setGithubConfig] = useState({
+        repo: "",
+        branch: "main",
+        filePath: "src/App.jsx",
+        commitMessage: "Update MindVara site"
+    });
     const [babelReady, setBabelReady] = useState(false);
     const [livePreview, setLivePreview] = useState(true);
     const [needsRun, setNeedsRun] = useState(false);
@@ -513,7 +521,7 @@ function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey
         setLivePreview(prevLivePreviewRef.current);
         setIsEditorOpen(false);
     };
-    function saveAsDefault() {
+    const generateProtocolSource = () => {
         const nl = "\n";
         let engineSourceCode = AURELIAN_ENGINE_SOURCE;
         const imports = [
@@ -540,7 +548,7 @@ function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey
             "import * as ReactSimpleCodeEditor from 'react-simple-code-editor';",
             "import * as ReactMarkdownModule from 'react-markdown';"
         ].join(nl);
-        const esc = (s) => (s || "").replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$\{/g, "\\${");
+        const esc = (s) => (s || "").replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\${/g, "\\${");
         const sortedKeys = Object.keys(files).sort();
         let embeddedBlock = "// --- EMBEDDED SOURCES ---" + nl;
         let initFilesProps = "";
@@ -600,19 +608,54 @@ function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey
             "};"
         ].join(nl);
 
-        const newFileContent = "/* eslint-disable */" + nl + imports + nl + nl + "// --- ENVIRONMENT CONSTANTS ---" + nl + "const isLocalHost = (h) => h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '';" + nl + "const host = typeof window !== 'undefined' ? window.location.hostname : '';" + nl + "const ENV = {" + nl + "    isLocal: typeof window !== 'undefined' && isLocalHost(host)," + nl + "    isProd: typeof window !== 'undefined' && !isLocalHost(host)" + nl + "};" + nl + "const DEV_KEY = " + JSON.stringify(DEV_KEY) + "; // Optional passcode to unlock dev/edit mode in production" + nl + nl + "// --- ACCESS CONTROL HELPER ---" + nl + "function getAccessControl() {\n    if (typeof window === 'undefined') return { devEnabled: false, editEnabled: false };\n    \n    // 1. Localhost: Always unlocked\n    if (ENV.isLocal) return { devEnabled: true, editEnabled: true };\n\n    // 2. Production with empty key: Open Access\n    if (ENV.isProd && DEV_KEY === \"\") {\n        return { devEnabled: true, editEnabled: true };\n    }\n\n    const params = new URLSearchParams(window.location.search);\n    const providedKey = params.get('devKey');\n\n    // 3. Production: Must match secret key\n    if (!DEV_KEY || providedKey !== DEV_KEY) {\n        return { devEnabled: false, editEnabled: false };\n    }\n\n    // 4. Flags\n    const hasFlag = (key) => {\n        const v = params.get(key);\n        return v === '1' || v === 'true' || v === 'on';\n    };\n    const editFlag = hasFlag('edit');\n    const devFlag = hasFlag('dev') || editFlag;\n\n    return { devEnabled: devFlag, editEnabled: editFlag };\n}" + nl + nl + "// ----------------------------------------------------------------------" + nl + "// --- ENGINE CONTRACT (DO NOT REMOVE OR MODIFY WITHOUT ADJUSTING TESTS) ---" + nl + "// ----------------------------------------------------------------------" + nl + "// 1. MUST accept AI-generated React pages incorporating external libs." + nl + "// 2. Import Normalizer MUST be allowlist-based." + nl + "// 3. MUST preserve React, local ('./'), and side-effect imports." + nl + "// 4. MUST be Idempotent (normalize(normalize(x)) === normalize(x))." + nl + "// 5. If a package is NOT in the allowlist, it MUST be left as 'import ...'." + nl + "//    EXCEPTION: 'three' and 'three/examples/*' are explicitly allowed/rewritten." + nl + nl + runEngineContractTestsString + nl + nl + engineSourceCode + nl + nl + embeddedBlock + nl + "// --- ROOT ENTRY ---" + nl + "export default function RootApp() {" + nl + "    const initialFiles = {" + nl + initFilesProps + "    };" + nl + "    const { devEnabled, editEnabled } = getAccessControl();" + nl + "    return React.createElement(ArchitectWorkshop, { initialFiles, mode: editEnabled ? 'edit' : 'view', locked: !devEnabled, devKey: DEV_KEY });" + nl + "}";
-        navigator.clipboard.writeText(newFileContent).then(() => {
+        const newFileContent = "/* eslint-disable */" + nl + imports + nl + nl + "// --- ENVIRONMENT CONSTANTS ---" + nl + "const isLocalHost = (h) => h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '';" + nl + "const host = typeof window !== 'undefined' ? window.location.hostname : '';" + nl + "const ENV = {" + nl + "    isLocal: typeof window !== 'undefined' && isLocalHost(host)," + nl + "    isProd: typeof window !== 'undefined' && !isLocalHost(host)" + nl + "};" + nl + "const DEV_KEY = " + JSON.stringify(propsDevKey || "") + "; // Optional passcode to unlock dev/edit mode in production" + nl + nl + "// --- ACCESS CONTROL HELPER ---" + nl + "function getAccessControl() {\n    if (typeof window === 'undefined') return { devEnabled: false, editEnabled: false };\n    \n    // 1. Localhost: Always unlocked\n    if (ENV.isLocal) return { devEnabled: true, editEnabled: true };\n\n    // 2. Production with empty key: Open Access\n    if (ENV.isProd && DEV_KEY === \"\") {\n        return { devEnabled: true, editEnabled: true };\n    }\n\n    const params = new URLSearchParams(window.location.search);\n    const providedKey = params.get('devKey');\n\n    // 3. Production: Must match secret key\n    if (!DEV_KEY || providedKey !== DEV_KEY) {\n        return { devEnabled: false, editEnabled: false };\n    }\n\n    // 4. Flags\n    const hasFlag = (key) => {\n        const v = params.get(key);\n        return v === '1' || v === 'true' || v === 'on';\n    };\n    const editFlag = hasFlag('edit');\n    const devFlag = hasFlag('dev') || editFlag;\n\n    return { devEnabled: devFlag, editEnabled: editFlag };\n}" + nl + nl + "// ----------------------------------------------------------------------" + nl + "// --- ENGINE CONTRACT (DO NOT REMOVE OR MODIFY WITHOUT ADJUSTING TESTS) ---" + nl + "// ----------------------------------------------------------------------" + nl + "// 1. MUST accept AI-generated React pages incorporating external libs." + nl + "// 2. Import Normalizer MUST be allowlist-based." + nl + "// 3. MUST preserve React, local ('./'), and side-effect imports." + nl + "// 4. MUST be Idempotent (normalize(normalize(x)) === normalize(x))." + nl + "// 5. If a package is NOT in the allowlist, it MUST be left as 'import ...'." + nl + "//    EXCEPTION: 'three' and 'three/examples/*' are explicitly allowed/rewritten." + nl + nl + runEngineContractTestsString + nl + nl + engineSourceCode + nl + nl + embeddedBlock + nl + "// --- ROOT ENTRY ---" + nl + "export default function RootApp() {" + nl + "    const initialFiles = {" + nl + initFilesProps + "    };" + nl + "    const { devEnabled, editEnabled } = getAccessControl();" + nl + "    return React.createElement(ArchitectWorkshop, { initialFiles, mode: editEnabled ? 'edit' : 'view', locked: !devEnabled, devKey: DEV_KEY });" + nl + "}";
+        return newFileContent;
+    };
+
+    function saveAsDefault() {
+        const content = generateProtocolSource();
+        navigator.clipboard.writeText(content).then(() => {
             setCopyFeedback("save");
             setTimeout(() => setCopyFeedback(null), 2e3);
         }).catch((err) => setError("Clipboard failed: " + err));
     }
+
+    const handlePushToGithub = async () => {
+        setPushing(true);
+        try {
+            const content = generateProtocolSource();
+            const res = await fetch('/api/pushToGithub', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    repo: githubConfig.repo,
+                    branch: githubConfig.branch,
+                    filePath: githubConfig.filePath,
+                    commitMessage: githubConfig.commitMessage,
+                    fileContent: content
+                })
+            });
+            const data = await res.json();
+            if (data.ok) {
+                setToastMsg("Pushed to GitHub successfully!");
+                setShowGithubDialog(false);
+            } else {
+                setError("GitHub Push Failed: " + data.error);
+            }
+        } catch (e) {
+            setError("Network Error: " + e.message);
+        } finally {
+            setPushing(false);
+            setTimeout(() => setToastMsg(null), 3e3);
+        }
+    };
     const copyActiveCode = () => {
         navigator.clipboard.writeText(files[activeFile] || "").then(() => {
             setCopyFeedback("code");
             setTimeout(() => setCopyFeedback(null), 2e3);
         });
     };
-    const { Code2, Save, Copy, Check, X, Plus, Trash2, Play } = lucide;
+    const { Code2, Save, Copy, Check, X, Plus, Trash2, Play, UploadCloud } = lucide;
     const { AnimatePresence, motion } = framerMotion;
     return h(
         "div",
@@ -644,9 +687,60 @@ function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey
                     }, h(Plus, { size: 16 })),
                     h("button", { onClick: openEditor, className: "p-3 bg-black/60 rounded-full" }, h(Code2, { size: 16 })),
                     h("button", { onClick: copyActiveCode, className: "p-3 bg-black/60 rounded-full" }, copyFeedback === "code" ? h(Check, { size: 16 }) : h(Copy, { size: 16 })),
-                    h("button", { onClick: saveAsDefault, className: "p-3 bg-black/60 rounded-full" }, copyFeedback === "save" ? h(Check, { size: 16 }) : h(Save, { size: 16 }))
+                    h("button", { onClick: saveAsDefault, className: "p-3 bg-black/60 rounded-full" }, copyFeedback === "save" ? h(Check, { size: 16 }) : h(Save, { size: 16 })),
+                    h("button", { onClick: () => setShowGithubDialog(true), className: "p-3 bg-black/60 rounded-full" }, h(UploadCloud, { size: 16 }))
                 ),
                 locked && h("div", { className: "px-2 py-1 bg-white/5 rounded text-[10px] text-zinc-500 uppercase tracking-widest font-semibold" }, "LOCKED")
+            )),
+            h(AnimatePresence, null, showGithubDialog && h(
+                motion.div,
+                { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 }, className: "fixed inset-0 z-[700] bg-black/80 flex items-center justify-center p-4" },
+                h("div", { className: "bg-[#111] border border-white/10 rounded-xl p-6 w-full max-w-md space-y-4" },
+                    h("h3", { className: "text-lg font-bold text-white flex items-center gap-2" }, h(UploadCloud, { size: 20 }), "Push to GitHub"),
+                    h("div", { className: "space-y-3" },
+                        h("div", null,
+                            h("label", { className: "block text-xs text-gray-400 mb-1" }, "Repository (owner/repo)"),
+                            h("input", {
+                                value: githubConfig.repo,
+                                onChange: e => setGithubConfig(p => ({ ...p, repo: e.target.value })),
+                                placeholder: "username/repo",
+                                className: "w-full bg-black border border-white/10 rounded px-3 py-2 text-sm text-white focus:border-amber-500 outline-none"
+                            })
+                        ),
+                        h("div", null,
+                            h("label", { className: "block text-xs text-gray-400 mb-1" }, "Branch"),
+                            h("input", {
+                                value: githubConfig.branch,
+                                onChange: e => setGithubConfig(p => ({ ...p, branch: e.target.value })),
+                                className: "w-full bg-black border border-white/10 rounded px-3 py-2 text-sm text-white focus:border-amber-500 outline-none"
+                            })
+                        ),
+                        h("div", null,
+                            h("label", { className: "block text-xs text-gray-400 mb-1" }, "File Path"),
+                            h("input", {
+                                value: githubConfig.filePath,
+                                onChange: e => setGithubConfig(p => ({ ...p, filePath: e.target.value })),
+                                className: "w-full bg-black border border-white/10 rounded px-3 py-2 text-sm text-white focus:border-amber-500 outline-none"
+                            })
+                        ),
+                        h("div", null,
+                            h("label", { className: "block text-xs text-gray-400 mb-1" }, "Commit Message"),
+                            h("input", {
+                                value: githubConfig.commitMessage,
+                                onChange: e => setGithubConfig(p => ({ ...p, commitMessage: e.target.value })),
+                                className: "w-full bg-black border border-white/10 rounded px-3 py-2 text-sm text-white focus:border-amber-500 outline-none"
+                            })
+                        )
+                    ),
+                    h("div", { className: "flex justify-end gap-2 mt-4" },
+                        h("button", { onClick: () => setShowGithubDialog(false), className: "px-4 py-2 text-sm text-gray-400 hover:text-white" }, "Cancel"),
+                        h("button", {
+                            onClick: handlePushToGithub,
+                            disabled: pushing || !githubConfig.repo,
+                            className: `px-4 py-2 text-sm bg-white text-black font-bold rounded hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2`
+                        }, pushing ? "Pushing..." : "Push Now")
+                    )
+                )
             )),
             h(AnimatePresence, null, isEditorOpen && mode === "edit" && h(
                 motion.div,
