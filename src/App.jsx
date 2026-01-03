@@ -1115,7 +1115,7 @@ export default function App({ env }) {
                  <div className="flex items-center gap-6">
                      <div onClick={() => navigate('__home__')} className="flex items-center gap-3 cursor-pointer group">
                         <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-500 group-hover:bg-amber-500/20 group-hover:scale-105 transition-all outline outline-1 outline-transparent group-hover:outline-amber-500/30"><lucide.Cpu size={18} /></div>
-                        <div><h1 className="text-sm font-bold text-gray-200 tracking-tight leading-none group-hover:text-white transition-colors">Aurelian</h1></div>
+                        <div><h1 className="text-sm font-bold text-gray-200 tracking-tight leading-none group-hover:text-white transition-colors">MindVara</h1></div>
                      </div>
                      <div className="h-4 w-px bg-white/10 mx-2"></div>
                      <div className="flex items-center gap-4">
@@ -1378,10 +1378,11 @@ export default function Home() {
       />
 
       {/* Main Content */}
-      <div className="relative z-20 w-full h-full flex justify-center items-center pointer-events-none">
+      <div className="relative z-20 w-full h-full flex flex-col justify-center items-center pointer-events-none">
         <h1 className="title-shader">
-          Aurelian
+          MindVara
         </h1>
+        <p className="text-zinc-500 font-mono mt-6 tracking-[0.5em] text-xs uppercase opacity-60">A place to think</p>
       </div>
 
       {/* WebGL Canvas Container */}
