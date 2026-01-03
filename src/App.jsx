@@ -47,11 +47,14 @@ function getAccessControl() {
     }
 
     // 3. Flags
-    const hasEdit = params.get('edit') === '1';
-    // Edit implies Dev
-    const hasDev = params.get('dev') === '1' || params.get('dev') === 'on' || hasEdit;
+    const hasFlag = (key) => {
+        const v = params.get(key);
+        return v === '1' || v === 'true' || v === 'on';
+    };
+    const editFlag = hasFlag('edit');
+    const devFlag = hasFlag('dev') || editFlag;
 
-    return { devEnabled: hasDev, editEnabled: hasEdit };
+    return { devEnabled: devFlag, editEnabled: editFlag };
 }
 
 // ----------------------------------------------------------------------
@@ -116,7 +119,7 @@ Round 2: ${round2}`);
     }
 };
 
-function ArchitectWorkshop({ initialFiles, mode = "edit" }) {
+function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false }) {
     const [files, setFiles] = useState(initialFiles || { "App.js": "" });
     const [activeFile, setActiveFile] = useState("App.js");
     const [error, setError] = useState(null);
@@ -127,7 +130,7 @@ function ArchitectWorkshop({ initialFiles, mode = "edit" }) {
         const handleKeyDown = (e) => {
             if (e.key === "F8") {
                 setShowWorkshopUI((prev) => !prev);
-                if (mode !== "edit") {
+                if (locked) {
                     setToastMsg("Workshop View-Only (LOCKED).");
                     setTimeout(() => setToastMsg(null), 2e3);
                 }
@@ -541,7 +544,7 @@ function ArchitectWorkshop({ initialFiles, mode = "edit" }) {
             embeddedBlock += `const ${varName} = \`${esc(sourceCode)}\`;` + nl;
             initFilesProps += `        "${key}": ${varName},` + nl;
         });
-        const newFileContent = "/* eslint-disable */" + nl + imports + nl + nl + "// --- ENVIRONMENT CONSTANTS ---" + nl + "const isLocalHost = (h) => h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '';" + nl + "const host = typeof window !== 'undefined' ? window.location.hostname : '';" + nl + "const ENV = {" + nl + "    isLocal: typeof window !== 'undefined' && isLocalHost(host)," + nl + "    isProd: typeof window !== 'undefined' && !isLocalHost(host)" + nl + "};" + nl + "const DEV_KEY = " + JSON.stringify(DEV_KEY) + "; // Optional passcode to unlock dev/edit mode in production" + nl + nl + "// --- ACCESS CONTROL HELPER ---" + nl + getAccessControl.toString() + nl + nl + "// ----------------------------------------------------------------------" + nl + "// --- ENGINE CONTRACT (DO NOT REMOVE OR MODIFY WITHOUT ADJUSTING TESTS) ---" + nl + "// ----------------------------------------------------------------------" + nl + "// 1. MUST accept AI-generated React pages incorporating external libs." + nl + "// 2. Import Normalizer MUST be allowlist-based." + nl + "// 3. MUST preserve React, local ('./'), and side-effect imports." + nl + "// 4. MUST be Idempotent (normalize(normalize(x)) === normalize(x))." + nl + "// 5. If a package is NOT in the allowlist, it MUST be left as 'import ...'." + nl + "//    EXCEPTION: 'three' and 'three/examples/*' are explicitly allowed/rewritten." + nl + nl + "const runEngineContractTests = " + runEngineContractTests.toString() + ";" + nl + nl + engineSourceCode + nl + nl + embeddedBlock + nl + "// --- ROOT ENTRY ---" + nl + "export default function RootApp() {" + nl + "    const initialFiles = {" + nl + initFilesProps + "    };" + nl + "    const { editEnabled } = getAccessControl();" + nl + "    return React.createElement(ArchitectWorkshop, { initialFiles, mode: editEnabled ? 'edit' : 'view' });" + nl + "}";
+        const newFileContent = "/* eslint-disable */" + nl + imports + nl + nl + "// --- ENVIRONMENT CONSTANTS ---" + nl + "const isLocalHost = (h) => h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '';" + nl + "const host = typeof window !== 'undefined' ? window.location.hostname : '';" + nl + "const ENV = {" + nl + "    isLocal: typeof window !== 'undefined' && isLocalHost(host)," + nl + "    isProd: typeof window !== 'undefined' && !isLocalHost(host)" + nl + "};" + nl + "const DEV_KEY = " + JSON.stringify(DEV_KEY) + "; // Optional passcode to unlock dev/edit mode in production" + nl + nl + "// --- ACCESS CONTROL HELPER ---" + nl + getAccessControl.toString() + nl + nl + "// ----------------------------------------------------------------------" + nl + "// --- ENGINE CONTRACT (DO NOT REMOVE OR MODIFY WITHOUT ADJUSTING TESTS) ---" + nl + "// ----------------------------------------------------------------------" + nl + "// 1. MUST accept AI-generated React pages incorporating external libs." + nl + "// 2. Import Normalizer MUST be allowlist-based." + nl + "// 3. MUST preserve React, local ('./'), and side-effect imports." + nl + "// 4. MUST be Idempotent (normalize(normalize(x)) === normalize(x))." + nl + "// 5. If a package is NOT in the allowlist, it MUST be left as 'import ...'." + nl + "//    EXCEPTION: 'three' and 'three/examples/*' are explicitly allowed/rewritten." + nl + nl + "const runEngineContractTests = " + runEngineContractTests.toString() + ";" + nl + nl + engineSourceCode + nl + nl + embeddedBlock + nl + "// --- ROOT ENTRY ---" + nl + "export default function RootApp() {" + nl + "    const initialFiles = {" + nl + initFilesProps + "    };" + nl + "    const { devEnabled, editEnabled } = getAccessControl();" + nl + "    return React.createElement(ArchitectWorkshop, { initialFiles, mode: editEnabled ? 'edit' : 'view', locked: !devEnabled });" + nl + "}";
         navigator.clipboard.writeText(newFileContent).then(() => {
             setCopyFeedback("save");
             setTimeout(() => setCopyFeedback(null), 2e3);
@@ -587,7 +590,7 @@ function ArchitectWorkshop({ initialFiles, mode = "edit" }) {
                     h("button", { onClick: copyActiveCode, className: "p-3 bg-black/60 rounded-full" }, copyFeedback === "code" ? h(Check, { size: 16 }) : h(Copy, { size: 16 })),
                     h("button", { onClick: saveAsDefault, className: "p-3 bg-black/60 rounded-full" }, copyFeedback === "save" ? h(Check, { size: 16 }) : h(Save, { size: 16 }))
                 ),
-                mode !== "edit" && h("div", { className: "px-2 py-1 bg-white/5 rounded text-[10px] text-zinc-500 uppercase tracking-widest font-semibold" }, "LOCKED")
+                locked && h("div", { className: "px-2 py-1 bg-white/5 rounded text-[10px] text-zinc-500 uppercase tracking-widest font-semibold" }, "LOCKED")
             )),
             h(AnimatePresence, null, isEditorOpen && mode === "edit" && h(
                 motion.div,
@@ -1397,6 +1400,6 @@ export default function RootApp() {
         "App.js": appJsSource,
         "Home.js": homeJsSource,
     };
-    const { editEnabled } = getAccessControl();
-    return React.createElement(ArchitectWorkshop, { initialFiles, mode: editEnabled ? 'edit' : 'view' });
+    const { devEnabled, editEnabled } = getAccessControl();
+    return React.createElement(ArchitectWorkshop, { initialFiles, mode: editEnabled ? 'edit' : 'view', locked: !devEnabled });
 }
