@@ -29,7 +29,7 @@ const ENV = {
     isLocal: typeof window !== 'undefined' && isLocalHost(host),
     isProd: typeof window !== 'undefined' && !isLocalHost(host)
 };
-const DEV_KEY = "aurelian-secret-key-123"; // Optional passcode to unlock dev/edit mode in production
+const DEV_KEY = ""; // Optional passcode to unlock dev/edit mode in production
 
 // --- ACCESS CONTROL HELPER ---
 function getAccessControl() {
@@ -37,6 +37,11 @@ function getAccessControl() {
 
     // 1. Localhost: Always unlocked
     if (ENV.isLocal) return { devEnabled: true, editEnabled: true };
+
+    // 2. Production with empty key: Open Access
+    if (ENV.isProd && DEV_KEY === "") {
+        return { devEnabled: true, editEnabled: true };
+    }
 
     const params = new URLSearchParams(window.location.search);
     const providedKey = params.get('devKey');
