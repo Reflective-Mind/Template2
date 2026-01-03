@@ -152,7 +152,7 @@ function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey
     const [showGithubDialog, setShowGithubDialog] = useState(false);
     const [pushing, setPushing] = useState(false);
     const [githubConfig, setGithubConfig] = useState({
-        repo: "",
+        repo: "Reflective-Mind/Template2",
         branch: "main",
         filePath: "src/App.jsx",
         commitMessage: "Update MindVara site"
