@@ -558,7 +558,7 @@ function ArchitectWorkshop({ initialFiles, mode = "edit" }) {
             h(AnimatePresence, null, showWorkshopUI && h(
                 motion.div,
                 { initial: { opacity: 0, x: 20 }, animate: { opacity: 1, x: 0 }, exit: { opacity: 0, x: 20 }, className: "fixed top-6 right-6 flex items-center gap-2 z-[500]" },
-                h("button", { onClick: () => setLivePreview(!livePreview), className: `px-3 py-1.5 rounded-full text-xs font-bold transition-all ${!livePreview ? "bg-amber-500/20 text-amber-500 ring-1 ring-amber-500/50" : "bg-black/60 text-white"}` }, livePreview ? "Live" : "Paused"),
+                mode === "edit" && h("button", { onClick: () => setLivePreview(!livePreview), className: `px-3 py-1.5 rounded-full text-xs font-bold transition-all ${!livePreview ? "bg-amber-500/20 text-amber-500 ring-1 ring-amber-500/50" : "bg-black/60 text-white"}` }, livePreview ? "Live" : "Paused"),
                 !livePreview && mode === "edit" && h("button", { onClick: runNow, className: `p-3 rounded-full transition-all ${needsRun ? "bg-amber-500 text-black animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.5)]" : "bg-black/60 text-gray-400 hover:text-white"}` }, h(Play, { size: 16, fill: "currentColor" })),
                 mode === "edit" && h(
                     React.Fragment,
