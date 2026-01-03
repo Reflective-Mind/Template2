@@ -42,7 +42,7 @@ function getAccessControl() {
     const providedKey = params.get('devKey');
 
     // 2. Production: Must match secret key
-    if (!DEV_KEY || providedKey !== DEV_KEY) {
+    if (!DEV_KEY || providedKey !== DEV_KEY) { // Secure check
         return { devEnabled: false, editEnabled: false };
     }
 
