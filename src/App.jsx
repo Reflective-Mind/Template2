@@ -119,8 +119,402 @@ Round 2: ${round2}`);
     }
 };
 
-const AURELIAN_ENGINE_SOURCE = `function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey: propsDevKey }`;
-
+const AURELIAN_ENGINE_SOURCE = `function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey: propsDevKey }) {
+    const [files, setFiles] = useState(initialFiles || { "App.js": "" });
+    const [activeFile, setActiveFile] = useState("App.js");
+    const [error, setError] = useState(null);
+    const [isEditorOpen, setIsEditorOpen] = useState(false);
+    const [showWorkshopUI, setShowWorkshopUI] = useState(false);
+    const [toastMsg, setToastMsg] = useState(null);
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.key === "F8") {
+                setShowWorkshopUI((prev) => !prev);
+                if (locked) {
+                    setToastMsg("Workshop View-Only (LOCKED).");
+                    setTimeout(() => setToastMsg(null), 2e3);
+                }
+            }
+        };
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [mode]);
+    const [copyFeedback, setCopyFeedback] = useState(null);
+    const [babelReady, setBabelReady] = useState(false);
+    const [livePreview, setLivePreview] = useState(true);
+    const [needsRun, setNeedsRun] = useState(false);
+    const safeEnv = useMemo(() => ({
+        toolkit: { open: showWorkshopUI, mode },
+        updateFiles: (cb) => {
+            if (mode === 'edit') setFiles(prev => {
+                const next = cb(prev);
+                return next;
+            });
+        },
+        saveProject: saveAsDefault,
+        devKey: propsDevKey
+    }), [showWorkshopUI, mode, propsDevKey]);
+    const [threeReady, setThreeReady] = useState(typeof window !== "undefined" && !!window.THREE);
+    const pendingAutoRunRef = useRef(false);
+    const lastExecutedSigRef = useRef("");
+    const prevLivePreviewRef = useRef(true);
+    const previewRef = useRef(null);
+    const rootInstance = useRef(null);
+    const isMounted = useRef(false);
+    const transpileCacheRef = useRef(/* @__PURE__ */ new Map());
+    const contractTested = useRef(false);
+    const h = React.createElement;
+    useEffect(() => {
+        if (initialFiles) {
+            setFiles((prev) => {
+                const next = { ...prev };
+                let changed = false;
+                Object.keys(initialFiles).forEach((f) => {
+                    if (initialFiles[f] && initialFiles[f] !== prev[f]) {
+                        console.log("[HMR] Updating " + f + " from source");
+                        next[f] = initialFiles[f];
+                        changed = true;
+                    }
+                });
+                return changed ? next : prev;
+            });
+        }
+    }, [initialFiles]);
+    useEffect(() => {
+        isMounted.current = true;
+        if (typeof window !== "undefined") {
+            window.__ensureAurelianFonts = () => {
+                if (document.getElementById("aurelian-font-space-grotesk")) return;
+                const link = document.createElement("link");
+                link.id = "aurelian-font-space-grotesk";
+                link.rel = "stylesheet";
+                link.href = "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;700&display=swap";
+                document.head.appendChild(link);
+            };
+            if (!document.querySelector('script[src*="tailwindcss"]')) {
+                const tw = document.createElement("script");
+                tw.src = "https://cdn.tailwindcss.com";
+                tw.async = true;
+                document.head.appendChild(tw);
+            }
+            if (!window.THREE && !document.querySelector('script[src*="three.min.js"]')) {
+                const three = document.createElement("script");
+                three.src = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js";
+                three.async = true;
+                three.onload = () => {
+                    setThreeReady(true);
+                    if (pendingAutoRunRef.current) {
+                        pendingAutoRunRef.current = false;
+                        setTimeout(() => executeCode(), 100);
+                    }
+                };
+                document.head.appendChild(three);
+            } else if (window.THREE && !threeReady) {
+                setThreeReady(true);
+            }
+        }
+        if (typeof window !== "undefined" && !window.Babel) {
+            const script = document.createElement("script");
+            script.src = "https://unpkg.com/@babel/standalone/babel.min.js";
+            script.async = true;
+            script.onload = () => {
+                if (isMounted.current) setBabelReady(true);
+            };
+            document.head.appendChild(script);
+        } else {
+            setBabelReady(true);
+        }
+        return () => {
+            isMounted.current = false;
+        };
+    }, []);
+    useEffect(() => {
+        if (babelReady && isMounted.current) {
+            const sig = JSON.stringify(files);
+            if (livePreview && !isEditorOpen) {
+                const timer = setTimeout(() => {
+                    executeCode();
+                    lastExecutedSigRef.current = sig;
+                    setNeedsRun(false);
+                }, 100);
+                return () => clearTimeout(timer);
+            } else if (sig !== lastExecutedSigRef.current) {
+                setNeedsRun(true);
+            }
+        }
+    }, [babelReady, files, livePreview, isEditorOpen, showWorkshopUI, mode]);
+    const normalizeImports = (source, filename, allowlist) => {
+        if (filename.endsWith(".css") || filename.endsWith(".json")) return source;
+        const isRewritable = (path) => {
+            if (path.startsWith("./") || path.startsWith("../")) return false;
+            if (["react", "react-dom/client", "react/jsx-runtime", "react/jsx-dev-runtime"].includes(path)) return false;
+            if (allowlist.includes(path)) return true;
+            if (path === "three" || path.startsWith("three/examples/")) return true;
+            return false;
+        };
+        let code = source;
+        code = code.replace(/from\\s*['"]\\.\\/([^'"]+)\\.js['"]/g, "from './$1'");
+        const sub = (pattern, replacer) => {
+            code = code.replace(pattern, replacer);
+        };
+        sub(/import\\s+(\\w+)\\s*,\\s*\\{([\\s\\S]*?)\\}\\s+from\\s+['"]([^'"]+)['"];?/g, (m, defName, named, path) => {
+            if (!isRewritable(path)) return m;
+            const namedBody = named.split(",").map((s) => {
+                const part = s.trim();
+                if (part.includes(" as ")) {
+                    const [imp, alias] = part.split(" as ").map((x) => x.trim());
+                    return \`\${imp}: \${alias}\`;
+                }
+                return part;
+            }).join(", ");
+            return \`const \${defName} = require('\${path}'); const { \${namedBody} } = require('\${path}');\`;
+        });
+        sub(/import\\s+\\*\\s+as\\s+(\\w+)\\s+from\\s+['"]([^'"]+)['"];?/g, (m, alias, path) => {
+            if (!isRewritable(path)) return m;
+            return \`const \${alias} = require('\${path}');\`;
+        });
+        sub(/import\\s+\\{([\\s\\S]*?)\\}\\s+from\\s+['"]([^'"]+)['"];?/g, (m, body, path) => {
+            if (!isRewritable(path)) return m;
+            const parts = body.split(",").map((s) => s.trim()).filter(Boolean);
+            if (parts.length === 1 && parts[0].includes(" as ") && parts[0].split(" as ")[0].trim() === "default") {
+                const alias = parts[0].split(" as ")[1].trim();
+                return \`const \${alias} = require('\${path}');\`;
+            }
+            const mapped = parts.map((s) => {
+                if (s.includes(" as ")) {
+                    const [imp, alias] = s.split(" as ").map((x) => x.trim());
+                    return \`\${imp}: \${alias}\`;
+                }
+                return s;
+            }).join(", ");
+            return \`const { \${mapped} } = require('\${path}');\`;
+        });
+        sub(/import\\s+(\\w+)\\s+from\\s+['"]([^'"]+)['"];?/g, (m, name, path) => {
+            if (!isRewritable(path)) return m;
+            return \`const \${name} = require('\${path}');\`;
+        });
+        return code;
+    };
+    const executeCode = () => {
+        if (!window.Babel || !isMounted.current) return;
+        if (!previewRef.current) {
+            pendingAutoRunRef.current = false;
+            return;
+        }
+        setError(null);
+        try {
+            if (!rootInstance.current && previewRef.current) rootInstance.current = ReactDOM.createRoot(previewRef.current);
+            const wrapFn = (fn, named = {}) => Object.assign((...args) => fn(...args), { default: fn, ...named });
+            const wrapComp = (Comp, named = {}) => Object.assign((props) => React.createElement(Comp, props), { default: Comp, ...named });
+            const clsxCompat = wrapFn(clsx, { clsx });
+            const twMergeCompat = wrapFn(twMerge, { twMerge });
+            const RMarkdown = ReactMarkdownModule.default || ReactMarkdownModule;
+            const rMarkdownCompat = wrapComp(RMarkdown);
+            const CodeEditorComp = ReactSimpleCodeEditor.default || ReactSimpleCodeEditor;
+            const rEditorCompat = wrapComp(CodeEditorComp, { Editor: CodeEditorComp });
+            const PrismRuntime = PrismJS.default || PrismJS;
+            const prismCompat = { ...PrismRuntime, default: PrismRuntime };
+            const DEPENDENCIES = {
+                "react": React,
+                "react-dom/client": ReactDOM,
+                "framer-motion": framerMotion,
+                "lucide-react": lucide,
+                "clsx": clsxCompat,
+                "tailwind-merge": twMergeCompat,
+                "firebase/app": firebaseApp,
+                "firebase/auth": firebaseAuth,
+                "firebase/firestore": firebaseFirestore,
+                "prismjs": prismCompat,
+                "react-simple-code-editor": rEditorCompat,
+                "react-markdown": rMarkdownCompat,
+                "three": window.THREE,
+                "react-dom": reactDomLegacy
+                // Legacy for createPortal etc.
+            };
+            const allowlist = Object.keys(DEPENDENCIES);
+            if (ENV.isLocal && !contractTested.current) {
+                runEngineContractTests(normalizeImports, allowlist, ENV);
+                contractTested.current = true;
+            }
+            const scope = {
+                React,
+                useState,
+                useEffect,
+                useRef,
+                useMemo,
+                useCallback,
+                useContext,
+                createContext,
+                useReducer,
+                useLayoutEffect,
+                require: (path) => {
+                    if (DEPENDENCIES[path]) return DEPENDENCIES[path];
+                    if (path === "three") {
+                        if (window.THREE) return window.THREE;
+                        pendingAutoRunRef.current = true;
+                        throw new Error("Three.js is still loading. It will auto-run when ready.");
+                    }
+                    if (path.startsWith("three/examples/")) {
+                        if (!window.THREE) {
+                            pendingAutoRunRef.current = true;
+                            throw new Error("Three.js must verify before loading helpers. Auto-running shortly...");
+                        }
+                        const injectThreeHelper = (name, url, checkFn) => {
+                            if (checkFn()) return;
+                            if (!document.querySelector(\`script[src="\${url}"]\`)) {
+                                const s = document.createElement("script");
+                                s.src = url;
+                                s.async = true;
+                                s.onload = () => {
+                                    if (livePreview) setTimeout(() => executeCode(), 100);
+                                };
+                                document.head.appendChild(s);
+                                pendingAutoRunRef.current = true;
+                                throw new Error(\`Loading \${name}... Auto-running when ready.\`);
+                            }
+                            if (!checkFn()) {
+                                pendingAutoRunRef.current = true;
+                                throw new Error(\`Waiting for \${name} to initialize...\`);
+                            }
+                        };
+                        if (path.includes("OrbitControls")) {
+                            injectThreeHelper("OrbitControls", "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js", () => window.THREE && window.THREE.OrbitControls);
+                            return { OrbitControls: window.THREE.OrbitControls };
+                        }
+                        if (path.includes("GLTFLoader")) {
+                            injectThreeHelper("GLTFLoader", "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js", () => window.THREE && window.THREE.GLTFLoader);
+                            return { GLTFLoader: window.THREE.GLTFLoader };
+                        }
+                        if (path.includes("RGBELoader")) {
+                            injectThreeHelper("RGBELoader", "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/RGBELoader.js", () => window.THREE && window.THREE.RGBELoader);
+                            return { RGBELoader: window.THREE.RGBELoader };
+                        }
+                        throw new Error(\`Unsupported Three example: \${path}. Supported: OrbitControls, GLTFLoader, RGBELoader.\`);
+                    }
+                    if (path.startsWith("./")) {
+                        const base = path.replace("./", "");
+                        const candidates = [
+                            base,
+                            \`\${base}.js\`,
+                            \`\${base}.jsx\`,
+                            \`\${base}.ts\`,
+                            \`\${base}.tsx\`,
+                            \`\${base}/index.js\`,
+                            \`\${base}/index.jsx\`,
+                            \`\${base}/index.ts\`,
+                            \`\${base}/index.tsx\`
+                        ];
+                        const found = candidates.find((c) => window.__modules__ && window.__modules__[c]);
+                        return found ? window.__modules__[found] : {};
+                    }
+                    throw new Error(\`Module '\${path}' not supported in this sandbox. Supported: \${Object.keys(DEPENDENCIES).join(", ")}\`);
+                }
+            };
+            window.__modules__ = {};
+            window.Prism = PrismRuntime;
+            const stripExt = (name) => name.replace(/\\.(js|jsx|ts|tsx)$/, "");
+            let bundle = "";
+            const sortedFiles = Object.keys(files).sort((a, b) => {
+                if (a === "App.js" && b !== "App.js") return 1;
+                if (b === "App.js" && a !== "App.js") return -1;
+                return a.localeCompare(b);
+            });
+            sortedFiles.forEach((f) => {
+                let code = files[f];
+                code = normalizeImports(code, f, allowlist);
+                const cleanName = stripExt(f);
+                const cacheKey = f + "::" + code;
+                let transpiled;
+                if (transpileCacheRef.current.has(cacheKey)) {
+                    transpiled = transpileCacheRef.current.get(cacheKey);
+                } else {
+                    try {
+                        const isTs = f.endsWith(".ts") || f.endsWith(".tsx");
+                        const presets = isTs ? ["react", "env", "typescript"] : ["react", "env"];
+                        transpiled = window.Babel.transform(code, { presets, filename: f }).code;
+                        transpileCacheRef.current.set(cacheKey, transpiled);
+                    } catch (e) {
+                        console.error("Compilation Error (" + f + "):", e);
+                        throw new Error("Compilation Error in " + f + ": " + e.message);
+                    }
+                }
+                bundle += \`(function(){ var exports={}; var module={exports:exports}; \${transpiled}; window.__modules__['\${f}'] = module.exports; window['\${cleanName}'] = module.exports.default || module.exports; })();\`;
+            });
+            const safeEnv = Object.freeze({
+                files: Object.freeze({ ...files }),
+                devKey: propsDevKey,
+                toolkit: { open: showWorkshopUI, mode },
+                updateFiles: (nextOrFn) => setFiles((prev) => typeof nextOrFn === "function" ? nextOrFn(prev) : nextOrFn),
+                saveProject: saveAsDefault
+            });
+            const finalScope = {
+                ...scope,
+                Prism: PrismRuntime,
+                Editor: CodeEditorComp,
+                ReactMarkdown: ReactMarkdownModule.default || ReactMarkdownModule,
+                files,
+                setFiles,
+                saveAsDefault,
+                render: (c) => rootInstance.current.render(h(React.Fragment, { key: Date.now() }, c)),
+                safeEnv
+            };
+            const errorHandler = (evt) => {
+                setError(evt.message || "Runtime Error");
+                return true;
+            };
+            const rejectionHandler = (evt) => {
+                setError("Unhandled Promise Rejection: " + (evt.reason ? evt.reason.message || evt.reason : "Unknown"));
+            };
+            window.addEventListener("error", errorHandler);
+            window.addEventListener("unhandledrejection", rejectionHandler);
+            try {
+                new Function(...Object.keys(finalScope), \`try { \${bundle} const T = (typeof App !== 'undefined' ? App : null); if(T) { try { render(React.createElement(T, {env: safeEnv})); } catch(e) { throw e; } } } catch(e){ throw e; }\`)(...Object.values(finalScope));
+            } catch (e) {
+                setError(e.message);
+            } finally {
+                window.removeEventListener("error", errorHandler);
+                window.removeEventListener("unhandledrejection", rejectionHandler);
+            }
+        } catch (e) {
+            console.error("Engine Runtime Error:", e);
+            setError(e.message);
+        }
+    };
+    const runNow = () => {
+        executeCode();
+        lastExecutedSigRef.current = JSON.stringify(files);
+        setNeedsRun(false);
+    };
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (!livePreview && (e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                e.preventDefault();
+                runNow();
+            }
+        };
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [livePreview, runNow]);
+    const openEditor = () => {
+        prevLivePreviewRef.current = livePreview;
+        setLivePreview(false);
+        setIsEditorOpen(true);
+    };
+    const closeEditor = () => {
+        setLivePreview(prevLivePreviewRef.current);
+        setIsEditorOpen(false);
+    };
+    function saveAsDefault() {
+        const nl = "\\n";
+        let engineSourceCode = AURELIAN_ENGINE_SOURCE;
+        const imports = [
+            "import React, { useState, useEffect, useRef, useMemo, useCallback, useContext, createContext, useReducer, useLayoutEffect } from 'react';",
+            "import * as lucide from 'lucide-react';",
+            "import * as framerMotion from 'framer-motion';",
+            "import ReactDOM from 'react-dom/client';",
+            "import * as reactDomLegacy from 'react-dom';",
+            "import { clsx } from 'clsx';",
+            "import { twMerge }`;
 function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey: propsDevKey }) {
     const [files, setFiles] = useState(initialFiles || { "App.js": "" });
     const [activeFile, setActiveFile] = useState("App.js");
