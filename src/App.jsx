@@ -269,35 +269,35 @@ function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey
                 const part = s.trim();
                 if (part.includes(" as ")) {
                     const [imp, alias] = part.split(" as ").map((x) => x.trim());
-                    return `\${imp}: \${alias}`;
+                    return `${imp}: ${alias}`;
                 }
                 return part;
             }).join(", ");
-            return `const \${defName} = require('\${path}'); const { \${namedBody} } = require('\${path}');`;
+            return `const ${defName} = require('${path}'); const { ${namedBody} } = require('${path}');`;
         });
         sub(/import\s+\*\s+as\s+(\w+)\s+from\s+['"]([^'"]+)['"];?/g, (m, alias, path) => {
             if (!isRewritable(path)) return m;
-            return `const \${alias} = require('\${path}');`;
+            return `const ${alias} = require('${path}');`;
         });
         sub(/import\s+\{([\s\S]*?)\}\s+from\s+['"]([^'"]+)['"];?/g, (m, body, path) => {
             if (!isRewritable(path)) return m;
             const parts = body.split(",").map((s) => s.trim()).filter(Boolean);
             if (parts.length === 1 && parts[0].includes(" as ") && parts[0].split(" as ")[0].trim() === "default") {
                 const alias = parts[0].split(" as ")[1].trim();
-                return `const \${alias} = require('\${path}');`;
+                return `const ${alias} = require('${path}');`;
             }
             const mapped = parts.map((s) => {
                 if (s.includes(" as ")) {
                     const [imp, alias] = s.split(" as ").map((x) => x.trim());
-                    return `\${imp}: \${alias}`;
+                    return `${imp}: ${alias}`;
                 }
                 return s;
             }).join(", ");
-            return `const { \${mapped} } = require('\${path}');`;
+            return `const { ${mapped} } = require('${path}');`;
         });
         sub(/import\s+(\w+)\s+from\s+['"]([^'"]+)['"];?/g, (m, name, path) => {
             if (!isRewritable(path)) return m;
-            return `const \${name} = require('\${path}');`;
+            return `const ${name} = require('${path}');`;
         });
         return code;
     };
