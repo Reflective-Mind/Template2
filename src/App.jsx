@@ -29,20 +29,29 @@ const ENV = {
     isLocal: typeof window !== 'undefined' && isLocalHost(host),
     isProd: typeof window !== 'undefined' && !isLocalHost(host)
 };
-const DEV_KEY = ""; // Optional passcode to unlock dev/edit mode in production
+const DEV_KEY = "aurelian-secret-key-123"; // Optional passcode to unlock dev/edit mode in production
 
 // --- ACCESS CONTROL HELPER ---
 function getAccessControl() {
     if (typeof window === 'undefined') return { devEnabled: false, editEnabled: false };
+
+    // 1. Localhost: Always unlocked
+    if (ENV.isLocal) return { devEnabled: true, editEnabled: true };
+
     const params = new URLSearchParams(window.location.search);
-    // Unlocked if:
-    // 1. Localhost
-    // 2. DEV_KEY is set AND matches ?devKey=...
-    // 3. DEV_KEY is empty AND explicit ?dev=1 is present
-    const keyMatch = DEV_KEY && DEV_KEY.length > 0 && params.get('devKey') === DEV_KEY;
-    const explicitUnlock = (!DEV_KEY || DEV_KEY.length === 0) && (params.get('dev') === '1' || params.get('dev') === 'on' || params.get('edit') === '1');
-    const unlocked = ENV.isLocal || keyMatch || explicitUnlock;
-    return { devEnabled: unlocked, editEnabled: unlocked };
+    const providedKey = params.get('devKey');
+
+    // 2. Production: Must match secret key
+    if (!DEV_KEY || providedKey !== DEV_KEY) {
+        return { devEnabled: false, editEnabled: false };
+    }
+
+    // 3. Flags
+    const hasEdit = params.get('edit') === '1';
+    // Edit implies Dev
+    const hasDev = params.get('dev') === '1' || params.get('dev') === 'on' || hasEdit;
+
+    return { devEnabled: hasDev, editEnabled: hasEdit };
 }
 
 // ----------------------------------------------------------------------
