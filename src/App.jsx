@@ -442,7 +442,7 @@ function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey
             });
             const safeEnv = Object.freeze({
                 files: Object.freeze({ ...files }),
-                devKey: DEV_KEY,
+                devKey: propsDevKey,
                 toolkit: { open: showWorkshopUI, mode },
                 updateFiles: (nextOrFn) => setFiles((prev) => typeof nextOrFn === "function" ? nextOrFn(prev) : nextOrFn),
                 saveProject: saveAsDefault
@@ -504,7 +504,7 @@ function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey
         setLivePreview(prevLivePreviewRef.current);
         setIsEditorOpen(false);
     };
-    const saveAsDefault = () => {
+    function saveAsDefault() {
         const nl = "\n";
         let engineSourceCode = ArchitectWorkshop.toString();
         engineSourceCode = engineSourceCode.replace(/^[ \t]*_s\(\);[\r\n]*/gm, "");
@@ -562,7 +562,7 @@ function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey
             setCopyFeedback("save");
             setTimeout(() => setCopyFeedback(null), 2e3);
         }).catch((err) => setError("Clipboard failed: " + err));
-    };
+    }
     const copyActiveCode = () => {
         navigator.clipboard.writeText(files[activeFile] || "").then(() => {
             setCopyFeedback("code");
