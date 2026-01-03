@@ -536,125 +536,125 @@ const AURELIAN_ENGINE_SOURCE = `function ArchitectWorkshop({ initialFiles, mode 
             "import * as ReactSimpleCodeEditor from 'react-simple-code-editor';",
             "import * as ReactMarkdownModule from 'react-markdown';"
         ].join(nl);
-        const esc = (s) => (s || "").replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$\{/g, "\\${");
-        const sortedKeys = Object.keys(files).sort();
-        let embeddedBlock = "// --- EMBEDDED SOURCES ---" + nl;
-        let initFilesProps = "";
-        sortedKeys.forEach((key) => {
-            let varName = "file_" + key.replace(/[^a-zA-Z0-9]/g, "_");
-            if (key === "App.js") varName = "appJsSource";
-            if (key === "Home.js") varName = "homeJsSource";
-            if (key === "Brand.js") varName = "brandJsSource";
-            let sourceCode = files[key] || "";
-            if (/\.(js|jsx|ts|tsx)$/.test(key)) {
-                let baseName = key.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9_]/g, "");
-                if (baseName && /^[a-z]/.test(baseName)) {
-                    baseName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
-                }
-                if (baseName) {
-                    sourceCode = sourceCode.replace(/(export\s+default\s+function\s*)(?:[a-zA-Z0-9_$]+)?(\s*\()/, () => `export default function ${baseName}(`);
-                }
-            }
-            embeddedBlock += `const ${varName} = \`${esc(sourceCode)}\`;` + nl;
-            initFilesProps += `        "${key}": ${varName},` + nl;
-        });
-        const runEngineContractTestsString = "const runEngineContractTests = (normalizerFn, allowlist, env) => {\\n    if (!env.isLocal) return;\\n    const testCases = [\\n        { input: \\\"import * as THREE from 'three';\\\", expected: \\\"const THREE = require('three');\\\" },\\n        { input: \\\"import React from 'react';\\\", expected: \\\"import React from 'react';\\\" },\\n        { input: \\\"import React, { useEffect } from 'react';\\\", expected: \\\"import React, { useEffect } from 'react';\\\" },\\n        { input: \\\"import ReactDOM from 'react-dom';\\\", expected: \\\"const ReactDOM = require('react-dom');\\\" },\\n        { input: \\\"import { createPortal } from 'react-dom';\\\", expected: \\\"const { createPortal } = require('react-dom');\\\" },\\n        { input: \\\"import X from 'some-unknown-pkg';\\\", expected: \\\"import X from 'some-unknown-pkg';\\\" },\\n        { input: \\\"import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';\\\", expected: \\\"const { OrbitControls } = require('three/examples/jsm/controls/OrbitControls.js');\\\" },\\n        { input: \\\"import X from './localFile';\\\", expected: \\\"import X from './localFile';\\\" },\\n        { input: \\\"import 'prismjs/components/prism-jsx';\\\", expected: \\\"import 'prismjs/components/prism-jsx';\\\" },\\n        { input: \\\"import { clsx } from 'clsx';\\\", expected: \\\"const { clsx } = require('clsx');\\\" },\\n        { input: \\\"import { A, B as C } from 'clsx';\\\", expected: \\\"const { A, B: C } = require('clsx');\\\" },\\n        { input: \\\"import X, { A, B as C } from 'clsx';\\\", expected: \\\"const X = require('clsx'); const { A, B: C } = require('clsx');\\\" },\\n        { input: \\\"import { default as X } from 'clsx';\\\", expected: \\\"const X = require('clsx');\\\" }\\n    ];\\n    let errors = [];\\n    testCases.forEach(({ input, expected }, idx) => {\\n        const result = normalizerFn(input, \\\"test.js\\\", allowlist).trim();\\n        if (result !== expected.trim()) {\\n            errors.push(\\`Case \\${idx} failed.\\\\nInput: \\${input}\\\\nExpected: \\${expected}\\\\nGot:      \\${result}\\`);\\n        }\\n        const round2 = normalizerFn(result, \\\"test.js\\\", allowlist).trim();\\n        if (round2 !== result) {\\n            errors.push(\\`Case \\${idx} Idempotence failed.\\\\nRound 1: \\${result}\\\\nRound 2: \\${round2}\\`);\\n        }\\n    });\\n    if (errors.length > 0) {\\n        console.error(\\\"ENGINE CONTRACT FAILED\\\");\\n        errors.forEach((e) => console.error(e));\\n    } else {\\n        console.log(\\\"Engine Contract: All tests passed.\\\");\\n    }\\n};";
-
-        const newFileContent = "/* eslint-disable */" + nl + imports + nl + nl + "// --- ENVIRONMENT CONSTANTS ---" + nl + "const isLocalHost = (h) => h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '';" + nl + "const host = typeof window !== 'undefined' ? window.location.hostname : '';" + nl + "const ENV = {" + nl + "    isLocal: typeof window !== 'undefined' && isLocalHost(host)," + nl + "    isProd: typeof window !== 'undefined' && !isLocalHost(host)" + nl + "};" + nl + "const DEV_KEY = " + JSON.stringify(DEV_KEY) + "; // Optional passcode to unlock dev/edit mode in production" + nl + nl + "// --- ACCESS CONTROL HELPER ---" + nl + "function getAccessControl() {\n    if (typeof window === 'undefined') return { devEnabled: false, editEnabled: false };\n    \n    // 1. Localhost: Always unlocked\n    if (ENV.isLocal) return { devEnabled: true, editEnabled: true };\n\n    // 2. Production with empty key: Open Access\n    if (ENV.isProd && DEV_KEY === \"\") {\n        return { devEnabled: true, editEnabled: true };\n    }\n\n    const params = new URLSearchParams(window.location.search);\n    const providedKey = params.get('devKey');\n\n    // 3. Production: Must match secret key\n    if (!DEV_KEY || providedKey !== DEV_KEY) {\n        return { devEnabled: false, editEnabled: false };\n    }\n\n    // 4. Flags\n    const hasFlag = (key) => {\n        const v = params.get(key);\n        return v === '1' || v === 'true' || v === 'on';\n    };\n    const editFlag = hasFlag('edit');\n    const devFlag = hasFlag('dev') || editFlag;\n\n    return { devEnabled: devFlag, editEnabled: editFlag };\n}" + nl + nl + "// ----------------------------------------------------------------------" + nl + "// --- ENGINE CONTRACT (DO NOT REMOVE OR MODIFY WITHOUT ADJUSTING TESTS) ---" + nl + "// ----------------------------------------------------------------------" + nl + "// 1. MUST accept AI-generated React pages incorporating external libs." + nl + "// 2. Import Normalizer MUST be allowlist-based." + nl + "// 3. MUST preserve React, local ('./'), and side-effect imports." + nl + "// 4. MUST be Idempotent (normalize(normalize(x)) === normalize(x))." + nl + "// 5. If a package is NOT in the allowlist, it MUST be left as 'import ...'." + nl + "//    EXCEPTION: 'three' and 'three/examples/*' are explicitly allowed/rewritten." + nl + nl + runEngineContractTestsString + nl + nl + engineSourceCode + nl + nl + embeddedBlock + nl + "// --- ROOT ENTRY ---" + nl + "export default function RootApp() {" + nl + "    const initialFiles = {" + nl + initFilesProps + "    };" + nl + "    const { devEnabled, editEnabled } = getAccessControl();" + nl + "    return React.createElement(ArchitectWorkshop, { initialFiles, mode: editEnabled ? 'edit' : 'view', locked: !devEnabled, devKey: DEV_KEY });" + nl + "}";
-        navigator.clipboard.writeText(newFileContent).then(() => {
-            setCopyFeedback("save");
-            setTimeout(() => setCopyFeedback(null), 2e3);
-        }).catch((err) => setError("Clipboard failed: " + err));
+        const esc = (s) => (s || "").replace(/\\/g, "\\\\").replace(/`/ g, "\\\`").replace(/\${/g, "\\${");
+const sortedKeys = Object.keys(files).sort();
+let embeddedBlock = "// --- EMBEDDED SOURCES ---" + nl;
+let initFilesProps = "";
+sortedKeys.forEach((key) => {
+    let varName = "file_" + key.replace(/[^a-zA-Z0-9]/g, "_");
+    if (key === "App.js") varName = "appJsSource";
+    if (key === "Home.js") varName = "homeJsSource";
+    if (key === "Brand.js") varName = "brandJsSource";
+    let sourceCode = files[key] || "";
+    if (/\.(js|jsx|ts|tsx)$/.test(key)) {
+        let baseName = key.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9_]/g, "");
+        if (baseName && /^[a-z]/.test(baseName)) {
+            baseName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
+        }
+        if (baseName) {
+            sourceCode = sourceCode.replace(/(export\s+default\s+function\s*)(?:[a-zA-Z0-9_$]+)?(\s*\()/, () => `export default function ${baseName}(`);
+        }
     }
-    const copyActiveCode = () => {
-        navigator.clipboard.writeText(files[activeFile] || "").then(() => {
-            setCopyFeedback("code");
-            setTimeout(() => setCopyFeedback(null), 2e3);
-        });
-    };
-    const { Code2, Save, Copy, Check, X, Plus, Trash2, Play } = lucide;
-    const { AnimatePresence, motion } = framerMotion;
-    return h(
-        "div",
-        { className: "relative h-screen w-screen bg-[#020202] font-sans overflow-hidden text-white" },
-        h("div", { ref: previewRef, className: "h-full w-full overflow-y-auto" }),
-        error && h("div", { className: "fixed bottom-4 left-4 right-4 bg-red-900/90 text-white p-4 rounded-lg border border-red-500 z-[9999] font-mono text-xs whitespace-pre-wrap shadow-2xl" }, "RUNTIME ERROR: " + error),
-        toastMsg && h("div", { className: "fixed bottom-4 right-4 bg-gray-800 text-white px-4 py-2 rounded-lg border border-gray-700 z-[9000] font-mono text-xs shadow-xl animate-pulse" }, toastMsg),
-        h(
-            React.Fragment,
-            null,
-            h(AnimatePresence, null, showWorkshopUI && h(
+    embeddedBlock += `const ${varName} = \`${esc(sourceCode)}\`;` + nl;
+    initFilesProps += `        "${key}": ${varName},` + nl;
+});
+const runEngineContractTestsString = "const runEngineContractTests = (normalizerFn, allowlist, env) => {\\n    if (!env.isLocal) return;\\n    const testCases = [\\n        { input: \\\"import * as THREE from 'three';\\\", expected: \\\"const THREE = require('three');\\\" },\\n        { input: \\\"import React from 'react';\\\", expected: \\\"import React from 'react';\\\" },\\n        { input: \\\"import React, { useEffect } from 'react';\\\", expected: \\\"import React, { useEffect } from 'react';\\\" },\\n        { input: \\\"import ReactDOM from 'react-dom';\\\", expected: \\\"const ReactDOM = require('react-dom');\\\" },\\n        { input: \\\"import { createPortal } from 'react-dom';\\\", expected: \\\"const { createPortal } = require('react-dom');\\\" },\\n        { input: \\\"import X from 'some-unknown-pkg';\\\", expected: \\\"import X from 'some-unknown-pkg';\\\" },\\n        { input: \\\"import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';\\\", expected: \\\"const { OrbitControls } = require('three/examples/jsm/controls/OrbitControls.js');\\\" },\\n        { input: \\\"import X from './localFile';\\\", expected: \\\"import X from './localFile';\\\" },\\n        { input: \\\"import 'prismjs/components/prism-jsx';\\\", expected: \\\"import 'prismjs/components/prism-jsx';\\\" },\\n        { input: \\\"import { clsx } from 'clsx';\\\", expected: \\\"const { clsx } = require('clsx');\\\" },\\n        { input: \\\"import { A, B as C } from 'clsx';\\\", expected: \\\"const { A, B: C } = require('clsx');\\\" },\\n        { input: \\\"import X, { A, B as C } from 'clsx';\\\", expected: \\\"const X = require('clsx'); const { A, B: C } = require('clsx');\\\" },\\n        { input: \\\"import { default as X } from 'clsx';\\\", expected: \\\"const X = require('clsx');\\\" }\\n    ];\\n    let errors = [];\\n    testCases.forEach(({ input, expected }, idx) => {\\n        const result = normalizerFn(input, \\\"test.js\\\", allowlist).trim();\\n        if (result !== expected.trim()) {\\n            errors.push(\\`Case \\${idx} failed.\\\\nInput: \\${input}\\\\nExpected: \\${expected}\\\\nGot:      \\${result}\\`);\\n        }\\n        const round2 = normalizerFn(result, \\\"test.js\\\", allowlist).trim();\\n        if (round2 !== result) {\\n            errors.push(\\`Case \\${idx} Idempotence failed.\\\\nRound 1: \\${result}\\\\nRound 2: \\${round2}\\`);\\n        }\\n    });\\n    if (errors.length > 0) {\\n        console.error(\\\"ENGINE CONTRACT FAILED\\\");\\n        errors.forEach((e) => console.error(e));\\n    } else {\\n        console.log(\\\"Engine Contract: All tests passed.\\\");\\n    }\\n};";
+
+const newFileContent = "/* eslint-disable */" + nl + imports + nl + nl + "// --- ENVIRONMENT CONSTANTS ---" + nl + "const isLocalHost = (h) => h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '';" + nl + "const host = typeof window !== 'undefined' ? window.location.hostname : '';" + nl + "const ENV = {" + nl + "    isLocal: typeof window !== 'undefined' && isLocalHost(host)," + nl + "    isProd: typeof window !== 'undefined' && !isLocalHost(host)" + nl + "};" + nl + "const DEV_KEY = " + JSON.stringify(DEV_KEY) + "; // Optional passcode to unlock dev/edit mode in production" + nl + nl + "// --- ACCESS CONTROL HELPER ---" + nl + "function getAccessControl() {\n    if (typeof window === 'undefined') return { devEnabled: false, editEnabled: false };\n    \n    // 1. Localhost: Always unlocked\n    if (ENV.isLocal) return { devEnabled: true, editEnabled: true };\n\n    // 2. Production with empty key: Open Access\n    if (ENV.isProd && DEV_KEY === \"\") {\n        return { devEnabled: true, editEnabled: true };\n    }\n\n    const params = new URLSearchParams(window.location.search);\n    const providedKey = params.get('devKey');\n\n    // 3. Production: Must match secret key\n    if (!DEV_KEY || providedKey !== DEV_KEY) {\n        return { devEnabled: false, editEnabled: false };\n    }\n\n    // 4. Flags\n    const hasFlag = (key) => {\n        const v = params.get(key);\n        return v === '1' || v === 'true' || v === 'on';\n    };\n    const editFlag = hasFlag('edit');\n    const devFlag = hasFlag('dev') || editFlag;\n\n    return { devEnabled: devFlag, editEnabled: editFlag };\n}" + nl + nl + "// ----------------------------------------------------------------------" + nl + "// --- ENGINE CONTRACT (DO NOT REMOVE OR MODIFY WITHOUT ADJUSTING TESTS) ---" + nl + "// ----------------------------------------------------------------------" + nl + "// 1. MUST accept AI-generated React pages incorporating external libs." + nl + "// 2. Import Normalizer MUST be allowlist-based." + nl + "// 3. MUST preserve React, local ('./'), and side-effect imports." + nl + "// 4. MUST be Idempotent (normalize(normalize(x)) === normalize(x))." + nl + "// 5. If a package is NOT in the allowlist, it MUST be left as 'import ...'." + nl + "//    EXCEPTION: 'three' and 'three/examples/*' are explicitly allowed/rewritten." + nl + nl + runEngineContractTestsString + nl + nl + engineSourceCode + nl + nl + embeddedBlock + nl + "// --- ROOT ENTRY ---" + nl + "export default function RootApp() {" + nl + "    const initialFiles = {" + nl + initFilesProps + "    };" + nl + "    const { devEnabled, editEnabled } = getAccessControl();" + nl + "    return React.createElement(ArchitectWorkshop, { initialFiles, mode: editEnabled ? 'edit' : 'view', locked: !devEnabled, devKey: DEV_KEY });" + nl + "}";
+navigator.clipboard.writeText(newFileContent).then(() => {
+    setCopyFeedback("save");
+    setTimeout(() => setCopyFeedback(null), 2e3);
+}).catch((err) => setError("Clipboard failed: " + err));
+    }
+const copyActiveCode = () => {
+    navigator.clipboard.writeText(files[activeFile] || "").then(() => {
+        setCopyFeedback("code");
+        setTimeout(() => setCopyFeedback(null), 2e3);
+    });
+};
+const { Code2, Save, Copy, Check, X, Plus, Trash2, Play } = lucide;
+const { AnimatePresence, motion } = framerMotion;
+return h(
+    "div",
+    { className: "relative h-screen w-screen bg-[#020202] font-sans overflow-hidden text-white" },
+    h("div", { ref: previewRef, className: "h-full w-full overflow-y-auto" }),
+    error && h("div", { className: "fixed bottom-4 left-4 right-4 bg-red-900/90 text-white p-4 rounded-lg border border-red-500 z-[9999] font-mono text-xs whitespace-pre-wrap shadow-2xl" }, "RUNTIME ERROR: " + error),
+    toastMsg && h("div", { className: "fixed bottom-4 right-4 bg-gray-800 text-white px-4 py-2 rounded-lg border border-gray-700 z-[9000] font-mono text-xs shadow-xl animate-pulse" }, toastMsg),
+    h(
+        React.Fragment,
+        null,
+        h(AnimatePresence, null, showWorkshopUI && h(
+            motion.div,
+            { initial: { opacity: 0, x: 20 }, animate: { opacity: 1, x: 0 }, exit: { opacity: 0, x: 20 }, className: "fixed top-6 right-6 flex items-center gap-2 z-[500]" },
+            mode === "edit" && h("button", { onClick: () => setLivePreview(!livePreview), className: `px-3 py-1.5 rounded-full text-xs font-bold transition-all ${!livePreview ? "bg-amber-500/20 text-amber-500 ring-1 ring-amber-500/50" : "bg-black/60 text-white"}` }, livePreview ? "Live" : "Paused"),
+            !livePreview && mode === "edit" && h("button", { onClick: runNow, className: `p-3 rounded-full transition-all ${needsRun ? "bg-amber-500 text-black animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.5)]" : "bg-black/60 text-gray-400 hover:text-white"}` }, h(Play, { size: 16, fill: "currentColor" })),
+            mode === "edit" && h(
+                React.Fragment,
+                null,
+                h("button", {
+                    onClick: () => {
+                        if (typeof window !== "undefined" && window.__AURELIAN_ADD_PAGE__) {
+                            window.__AURELIAN_ADD_PAGE__();
+                        } else {
+                            setToastMsg("Add Page: App.js setup required.");
+                            setTimeout(() => setToastMsg(null), 3e3);
+                        }
+                    },
+                    className: "p-3 bg-black/60 rounded-full"
+                }, h(Plus, { size: 16 })),
+                h("button", { onClick: openEditor, className: "p-3 bg-black/60 rounded-full" }, h(Code2, { size: 16 })),
+                h("button", { onClick: copyActiveCode, className: "p-3 bg-black/60 rounded-full" }, copyFeedback === "code" ? h(Check, { size: 16 }) : h(Copy, { size: 16 })),
+                h("button", { onClick: saveAsDefault, className: "p-3 bg-black/60 rounded-full" }, copyFeedback === "save" ? h(Check, { size: 16 }) : h(Save, { size: 16 }))
+            ),
+            locked && h("div", { className: "px-2 py-1 bg-white/5 rounded text-[10px] text-zinc-500 uppercase tracking-widest font-semibold" }, "LOCKED")
+        )),
+        h(AnimatePresence, null, isEditorOpen && mode === "edit" && h(
+            motion.div,
+            { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 }, className: "fixed inset-0 z-[600] bg-black/80 flex items-center justify-center p-8 lg:p-20" },
+            h(
                 motion.div,
-                { initial: { opacity: 0, x: 20 }, animate: { opacity: 1, x: 0 }, exit: { opacity: 0, x: 20 }, className: "fixed top-6 right-6 flex items-center gap-2 z-[500]" },
-                mode === "edit" && h("button", { onClick: () => setLivePreview(!livePreview), className: `px-3 py-1.5 rounded-full text-xs font-bold transition-all ${!livePreview ? "bg-amber-500/20 text-amber-500 ring-1 ring-amber-500/50" : "bg-black/60 text-white"}` }, livePreview ? "Live" : "Paused"),
-                !livePreview && mode === "edit" && h("button", { onClick: runNow, className: `p-3 rounded-full transition-all ${needsRun ? "bg-amber-500 text-black animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.5)]" : "bg-black/60 text-gray-400 hover:text-white"}` }, h(Play, { size: 16, fill: "currentColor" })),
-                mode === "edit" && h(
-                    React.Fragment,
-                    null,
-                    h("button", {
-                        onClick: () => {
-                            if (typeof window !== "undefined" && window.__AURELIAN_ADD_PAGE__) {
-                                window.__AURELIAN_ADD_PAGE__();
-                            } else {
-                                setToastMsg("Add Page: App.js setup required.");
-                                setTimeout(() => setToastMsg(null), 3e3);
-                            }
-                        },
-                        className: "p-3 bg-black/60 rounded-full"
-                    }, h(Plus, { size: 16 })),
-                    h("button", { onClick: openEditor, className: "p-3 bg-black/60 rounded-full" }, h(Code2, { size: 16 })),
-                    h("button", { onClick: copyActiveCode, className: "p-3 bg-black/60 rounded-full" }, copyFeedback === "code" ? h(Check, { size: 16 }) : h(Copy, { size: 16 })),
-                    h("button", { onClick: saveAsDefault, className: "p-3 bg-black/60 rounded-full" }, copyFeedback === "save" ? h(Check, { size: 16 }) : h(Save, { size: 16 }))
-                ),
-                locked && h("div", { className: "px-2 py-1 bg-white/5 rounded text-[10px] text-zinc-500 uppercase tracking-widest font-semibold" }, "LOCKED")
-            )),
-            h(AnimatePresence, null, isEditorOpen && mode === "edit" && h(
-                motion.div,
-                { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 }, className: "fixed inset-0 z-[600] bg-black/80 flex items-center justify-center p-8 lg:p-20" },
+                { initial: { scale: 0.95 }, animate: { scale: 1 }, exit: { scale: 0.95 }, className: "w-full max-w-6xl h-full flex flex-col bg-[#080808] border border-white/5 rounded-xl overflow-hidden" },
                 h(
-                    motion.div,
-                    { initial: { scale: 0.95 }, animate: { scale: 1 }, exit: { scale: 0.95 }, className: "w-full max-w-6xl h-full flex flex-col bg-[#080808] border border-white/5 rounded-xl overflow-hidden" },
+                    "div",
+                    { className: "flex items-center justify-between p-4 bg-[#0a0a0a]" },
+                    h("h3", {}, "Godlike Engine v3.0"),
                     h(
                         "div",
-                        { className: "flex items-center justify-between p-4 bg-[#0a0a0a]" },
-                        h("h3", {}, "Godlike Engine v3.0"),
-                        h(
-                            "div",
-                            { className: "flex items-center gap-2" },
-                            h("button", { onClick: runNow, className: "px-3 py-1.5 bg-amber-500/10 text-amber-500 rounded text-xs hover:bg-amber-500/20" }, "Run"),
-                            h("button", { onClick: closeEditor }, h(X, { size: 20 }))
-                        )
+                        { className: "flex items-center gap-2" },
+                        h("button", { onClick: runNow, className: "px-3 py-1.5 bg-amber-500/10 text-amber-500 rounded text-xs hover:bg-amber-500/20" }, "Run"),
+                        h("button", { onClick: closeEditor }, h(X, { size: 20 }))
+                    )
+                ),
+                h(
+                    "div",
+                    { className: "flex-1 flex overflow-hidden" },
+                    h(
+                        "div",
+                        { className: "w-48 bg-[#050505] p-4 space-y-2 overflow-y-auto" },
+                        Object.keys(files).map((filename) => h("button", { key: filename, onClick: () => setActiveFile(filename), className: `w-full text-left p-2 rounded ${activeFile === filename ? "text-amber-500" : "text-gray-400"}` }, filename))
                     ),
                     h(
                         "div",
-                        { className: "flex-1 flex overflow-hidden" },
-                        h(
-                            "div",
-                            { className: "w-48 bg-[#050505] p-4 space-y-2 overflow-y-auto" },
-                            Object.keys(files).map((filename) => h("button", { key: filename, onClick: () => setActiveFile(filename), className: `w-full text-left p-2 rounded ${activeFile === filename ? "text-amber-500" : "text-gray-400"}` }, filename))
-                        ),
-                        h(
-                            "div",
-                            { className: "flex-1 flex flex-col bg-[#080808]" },
-                            h("textarea", {
-                                value: files[activeFile] || "",
-                                onChange: (e) => {
-                                    const val = e.target.value;
-                                    setFiles((prev) => ({ ...prev, [activeFile]: val }));
-                                },
-                                autoFocus: true,
-                                spellCheck: false,
-                                onPaste: () => {
-                                },
-                                className: "flex-1 bg-transparent p-4 font-mono text-xs text-gray-300 resize-none outline-none whitespace-pre overflow-auto leading-relaxed"
-                            })
-                        )
+                        { className: "flex-1 flex flex-col bg-[#080808]" },
+                        h("textarea", {
+                            value: files[activeFile] || "",
+                            onChange: (e) => {
+                                const val = e.target.value;
+                                setFiles((prev) => ({ ...prev, [activeFile]: val }));
+                            },
+                            autoFocus: true,
+                            spellCheck: false,
+                            onPaste: () => {
+                            },
+                            className: "flex-1 bg-transparent p-4 font-mono text-xs text-gray-300 resize-none outline-none whitespace-pre overflow-auto leading-relaxed"
+                        })
                     )
                 )
-            ))
-        ),
-        !livePreview && needsRun && h("div", { className: "fixed top-20 right-8 px-4 py-2 bg-black/80 text-amber-500 text-xs font-mono border border-amber-500/30 rounded-lg pointer-events-none z-[490]" }, "Preview paused — press Run")
-    );
+            )
+        ))
+    ),
+    !livePreview && needsRun && h("div", { className: "fixed top-20 right-8 px-4 py-2 bg-black/80 text-amber-500 text-xs font-mono border border-amber-500/30 rounded-lg pointer-events-none z-[490]" }, "Preview paused — press Run")
+);
 }
 
 // --- EMBEDDED SOURCES ---
