@@ -1048,6 +1048,30 @@ function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey
 }
 
 // --- EMBEDDED SOURCES ---
+const brandJsSource = `import React from 'react';
+
+export const BRAND_NAME = "MindVara";
+export const BRAND_TAGLINE = "A place to think";
+
+export function BrandMark(props) {
+  return (
+    <svg
+      width={props.size || 24}
+      height={props.size || 24}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      xmlns="http://www.w3.org/2000/svg"
+      {...props}
+    >
+      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+    </svg>
+  );
+}
+`;
 const file_AddedPage_js = `import React from 'react';
 export default function AddedPage() {
   return <div className="h-full w-full p-10 text-white bg-[#0A0A0A] flex items-center justify-center">
@@ -1057,7 +1081,8 @@ export default function AddedPage() {
       </div>
   </div>;
 }`;
-const appJsSource = `import AddedPage from './AddedPage';
+const appJsSource = `import { BRAND_NAME, BrandMark } from './Brand';
+import AddedPage from './AddedPage';
 import React, { useState, useEffect, useMemo } from 'react';
 import * as lucide from 'lucide-react';
 
@@ -1520,8 +1545,8 @@ export default function App({ env }) {
              <nav className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-[#050505] sticky top-0 z-50 shrink-0 select-none">
                  <div className="flex items-center gap-6">
                      <div onClick={() => navigate('__home__')} className="flex items-center gap-3 cursor-pointer group">
-                        <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-500 group-hover:bg-amber-500/20 group-hover:scale-105 transition-all outline outline-1 outline-transparent group-hover:outline-amber-500/30"><lucide.Cpu size={18} /></div>
-                        <div><h1 className="text-sm font-bold text-gray-200 tracking-tight leading-none group-hover:text-white transition-colors">MindVara</h1></div>
+                        <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-500 group-hover:bg-amber-500/20 group-hover:scale-105 transition-all outline outline-1 outline-transparent group-hover:outline-amber-500/30"><BrandMark size={18} /></div>
+                        <div><h1 className="text-sm font-bold text-gray-200 tracking-tight leading-none group-hover:text-white transition-colors">{BRAND_NAME}</h1></div>
                      </div>
                      <div className="h-4 w-px bg-white/10 mx-2"></div>
                      <div className="flex items-center gap-4">
@@ -1589,7 +1614,8 @@ export default function App({ env }) {
     );
 }
 `;
-const homeJsSource = `import React, { useEffect, useRef } from 'react';
+const homeJsSource = `import { BRAND_NAME, BRAND_TAGLINE } from './Brand';
+import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 
 // --- Shaders ---
@@ -1786,9 +1812,9 @@ export default function Home() {
       {/* Main Content */}
       <div className="relative z-20 w-full h-full flex flex-col justify-center items-center pointer-events-none">
         <h1 className="title-shader">
-          MindVara
+          {BRAND_NAME}
         </h1>
-        <p className="text-zinc-500 font-mono mt-6 tracking-[0.5em] text-xs uppercase opacity-60">A place to think</p>
+        <p className="text-zinc-500 font-mono mt-6 tracking-[0.5em] text-xs uppercase opacity-60">{BRAND_TAGLINE}</p>
       </div>
 
       {/* WebGL Canvas Container */}
@@ -1803,6 +1829,7 @@ export default function Home() {
 // --- ROOT ENTRY ---
 export default function RootApp() {
     const initialFiles = {
+        "Brand.js": brandJsSource,
         "AddedPage.js": file_AddedPage_js,
         "App.js": appJsSource,
         "Home.js": homeJsSource,
