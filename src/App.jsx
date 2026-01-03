@@ -367,7 +367,7 @@ function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey
                         }
                         const injectThreeHelper = (name, url, checkFn) => {
                             if (checkFn()) return;
-                            if (!document.querySelector(`script[src="\${url}"]`)) {
+                            if (!document.querySelector(`script[src="${url}"]`)) {
                                 const s = document.createElement("script");
                                 s.src = url;
                                 s.async = true;
@@ -376,11 +376,11 @@ function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey
                                 };
                                 document.head.appendChild(s);
                                 pendingAutoRunRef.current = true;
-                                throw new Error(`Loading \${name}... Auto-running when ready.`);
+                                throw new Error(`Loading ${name}... Auto-running when ready.`);
                             }
                             if (!checkFn()) {
                                 pendingAutoRunRef.current = true;
-                                throw new Error(`Waiting for \${name} to initialize...`);
+                                throw new Error(`Waiting for ${name} to initialize...`);
                             }
                         };
                         if (path.includes("OrbitControls")) {
@@ -395,25 +395,25 @@ function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey
                             injectThreeHelper("RGBELoader", "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/RGBELoader.js", () => window.THREE && window.THREE.RGBELoader);
                             return { RGBELoader: window.THREE.RGBELoader };
                         }
-                        throw new Error(`Unsupported Three example: \${path}. Supported: OrbitControls, GLTFLoader, RGBELoader.`);
+                        throw new Error(`Unsupported Three example: ${path}. Supported: OrbitControls, GLTFLoader, RGBELoader.`);
                     }
                     if (path.startsWith("./")) {
                         const base = path.replace("./", "");
                         const candidates = [
                             base,
-                            `\${base}.js`,
-                            `\${base}.jsx`,
-                            `\${base}.ts`,
-                            `\${base}.tsx`,
-                            `\${base}/index.js`,
-                            `\${base}/index.jsx`,
-                            `\${base}/index.ts`,
-                            `\${base}/index.tsx`
+                            `${base}.js`,
+                            `${base}.jsx`,
+                            `${base}.ts`,
+                            `${base}.tsx`,
+                            `${base}/index.js`,
+                            `${base}/index.jsx`,
+                            `${base}/index.ts`,
+                            `${base}/index.tsx`
                         ];
                         const found = candidates.find((c) => window.__modules__ && window.__modules__[c]);
                         return found ? window.__modules__[found] : {};
                     }
-                    throw new Error(`Module '\${path}' not supported in this sandbox. Supported: \${Object.keys(DEPENDENCIES).join(", ")}`);
+                    throw new Error(`Module '${path}' not supported in this sandbox. Supported: ${Object.keys(DEPENDENCIES).join(", ")}`);
                 }
             };
             window.__modules__ = {};
@@ -444,7 +444,7 @@ function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey
                         throw new Error("Compilation Error in " + f + ": " + e.message);
                     }
                 }
-                bundle += `(function(){ var exports={}; var module={exports:exports}; \${transpiled}; window.__modules__['\${f}'] = module.exports; window['\${cleanName}'] = module.exports.default || module.exports; })();`;
+                bundle += `(function(){ var exports={}; var module={exports:exports}; ${transpiled}; window.__modules__['${f}'] = module.exports; window['${cleanName}'] = module.exports.default || module.exports; })();`;
             });
             const safeEnv = Object.freeze({
                 files: Object.freeze({ ...files }),
@@ -474,7 +474,7 @@ function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey
             window.addEventListener("error", errorHandler);
             window.addEventListener("unhandledrejection", rejectionHandler);
             try {
-                new Function(...Object.keys(finalScope), `try { \${bundle} const T = (typeof App !== 'undefined' ? App : null); if(T) { try { render(React.createElement(T, {env: safeEnv})); } catch(e) { throw e; } } } catch(e){ throw e; }`)(...Object.values(finalScope));
+                new Function(...Object.keys(finalScope), `try { ${bundle} const T = (typeof App !== 'undefined' ? App : null); if(T) { try { render(React.createElement(T, {env: safeEnv})); } catch(e) { throw e; } } } catch(e){ throw e; }`)(...Object.values(finalScope));
             } catch (e) {
                 setError(e.message);
             } finally {
