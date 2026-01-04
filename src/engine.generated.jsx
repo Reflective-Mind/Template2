@@ -32,25 +32,19 @@ const ENV = {
 const DEV_KEY = ""; // Optional passcode to unlock dev/edit mode in production
 
 // --- ACCESS CONTROL HELPER ---
-function getAccessControl() {
+// --- ACCESS CONTROL HELPER ---
+function getAccessControl(runtimeKey) {
     if (typeof window === 'undefined') return { devEnabled: false, editEnabled: false };
 
     // 1. Localhost: Always unlocked
     if (ENV.isLocal) return { devEnabled: true, editEnabled: true };
 
-
-
-
-    // 2. Production with empty key: Open Access
-    if (ENV.isProd && DEV_KEY === "") {
-        return { devEnabled: true, editEnabled: true };
-    }
-
     const params = new URLSearchParams(window.location.search);
     const providedKey = params.get('devKey');
+    const effectiveKey = runtimeKey || DEV_KEY;
 
     // 2. Production: Must match secret key
-    if (!DEV_KEY || providedKey !== DEV_KEY) { // Secure check
+    if (!effectiveKey || providedKey !== effectiveKey) {
         return { devEnabled: false, editEnabled: false };
     }
 
@@ -1995,13 +1989,13 @@ export default function Home() {
 }`;
 
 // --- ROOT ENTRY ---
-export default function RootApp() {
+export default function RootApp({ devKey }) {
     const initialFiles = {
         "Brand.js": brandJsSource,
         "AddedPage.js": file_AddedPage_js,
         "App.js": appJsSource,
         "Home.js": homeJsSource,
     };
-    const { devEnabled, editEnabled } = getAccessControl();
-    return React.createElement(ArchitectWorkshop, { initialFiles, mode: editEnabled ? 'edit' : 'view', locked: !devEnabled, devKey: DEV_KEY });
+    const { devEnabled, editEnabled } = getAccessControl(devKey);
+    return React.createElement(ArchitectWorkshop, { initialFiles, mode: editEnabled ? 'edit' : 'view', locked: !devEnabled, devKey: devKey || DEV_KEY });
 }
