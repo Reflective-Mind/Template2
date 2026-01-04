@@ -1097,8 +1097,8 @@ function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey
                     null,
                     h("button", {
                         onClick: () => {
-                            if (typeof window !== "undefined" && window.__MINDVARA_ADD_PAGE__) {
-                                window.__MINDVARA_ADD_PAGE__();
+                            if (typeof window !== "undefined" && window.__AURELIAN_ADD_PAGE__) {
+                                window.__AURELIAN_ADD_PAGE__();
                             } else {
                                 setToastMsg("Add Page: App.js setup required.");
                                 setTimeout(() => setToastMsg(null), 3e3);
