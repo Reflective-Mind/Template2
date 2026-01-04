@@ -144,7 +144,7 @@ function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey
         };
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [mode]);
+    }, [mode, locked]);
     const [copyFeedback, setCopyFeedback] = useState(null);
     const [showGithubDialog, setShowGithubDialog] = useState(false);
     const [pushing, setPushing] = useState(false);
