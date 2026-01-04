@@ -197,10 +197,10 @@ function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey
     useEffect(() => {
         isMounted.current = true;
         if (typeof window !== "undefined") {
-            window.__ensureAurelianFonts = () => {
-                if (document.getElementById("aurelian-font-space-grotesk")) return;
+            window.__ensureMindVaraFonts = () => {
+                if (document.getElementById("mindvara-font-space-grotesk")) return;
                 const link = document.createElement("link");
-                link.id = "aurelian-font-space-grotesk";
+                link.id = "mindvara-font-space-grotesk";
                 link.rel = "stylesheet";
                 link.href = "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;700&display=swap";
                 document.head.appendChild(link);
@@ -1097,8 +1097,8 @@ function ArchitectWorkshop({ initialFiles, mode = "edit", locked = false, devKey
                     null,
                     h("button", {
                         onClick: () => {
-                            if (typeof window !== "undefined" && window.__AURELIAN_ADD_PAGE__) {
-                                window.__AURELIAN_ADD_PAGE__();
+                            if (typeof window !== "undefined" && window.__MINDVARA_ADD_PAGE__) {
+                                window.__MINDVARA_ADD_PAGE__();
                             } else {
                                 setToastMsg("Add Page: App.js setup required.");
                                 setTimeout(() => setToastMsg(null), 3e3);
@@ -1864,7 +1864,7 @@ export default function Home() {
   const mountRef = useRef(null);
 
   useEffect(() => {
-    window.__ensureAurelianFonts?.();
+    window.__ensureMindVaraFonts?.();
     if (!mountRef.current) return;
 
     // --- Scene Setup ---
