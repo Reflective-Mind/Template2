@@ -30,9 +30,9 @@ const ENV = {
     isProd: typeof window !== 'undefined' && !isLocalHost(host)
 };
 const DEV_KEY =
-    (typeof import.meta !== \"undefined\" && import.meta.env && (import.meta.env.VITE_DEV_KEY || import.meta.env.VITE_EDITOR_KEY)) ||
-    (typeof process !== \"undefined\" && process.env && (process.env.REACT_APP_DEV_KEY || process.env.REACT_APP_EDITOR_KEY)) ||
-    \"\"; // Optional passcode to unlock dev/edit mode in production
+    (typeof import.meta !== "undefined" && import.meta.env && (import.meta.env.VITE_DEV_KEY || import.meta.env.VITE_EDITOR_KEY)) ||
+    (typeof process !== "undefined" && process.env && (process.env.REACT_APP_DEV_KEY || process.env.REACT_APP_EDITOR_KEY)) ||
+    ""; // Optional passcode to unlock dev/edit mode in production
 
 // --- ACCESS CONTROL HELPER ---
 function getAccessControl(runtimeKey) {
